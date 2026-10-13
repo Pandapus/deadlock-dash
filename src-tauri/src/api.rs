@@ -7,10 +7,14 @@ use std::time::Duration;
 use reqwest::Client;
 use serde_json::Value;
 
-const BASE_URL: &str = "https://api.deadlock-api.com";
-const USER_AGENT: &str = concat!("deadlock-dash/", env!("CARGO_PKG_VERSION"));
+pub const BASE_URL: &str = "https://api.deadlock-api.com";
+pub const USER_AGENT: &str = concat!("deadlock-dash/", env!("CARGO_PKG_VERSION"));
 /// Optional key from https://deadlock-api.com; raises some rate limits.
 const API_KEY_ENV: &str = "DEADLOCK_API_KEY";
+
+pub fn api_key() -> Option<String> {
+    std::env::var(API_KEY_ENV).ok().filter(|k| !k.is_empty())
+}
 
 pub struct DeadlockApi {
     client: Client,
@@ -24,8 +28,10 @@ impl DeadlockApi {
             .timeout(Duration::from_secs(15))
             .build()
             .expect("failed to build HTTP client");
-        let api_key = std::env::var(API_KEY_ENV).ok().filter(|k| !k.is_empty());
-        Self { client, api_key }
+        Self {
+            client,
+            api_key: api_key(),
+        }
     }
 
     pub async fn get(&self, path: &str, query: &[(String, String)]) -> Result<Value, String> {

@@ -1,19 +1,34 @@
 import { useEffect, useState } from "react";
 import { detectEnvironment, type Environment } from "./api/native";
 import { ConsoleTail } from "./components/ConsoleTail";
+import { ItemsPage } from "./components/ItemsPage";
 import { LiveMatch } from "./components/LiveMatch";
+import { LiveScoreboard } from "./components/LiveScoreboard";
+import { MatchReportPanel } from "./components/MatchReportPanel";
+import { ProfilePage } from "./components/ProfilePage";
 import { RecentMatches } from "./components/RecentMatches";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { useConsoleWatch, type GameState } from "./hooks/useConsoleWatch";
 import { useHeroes } from "./hooks/useHeroes";
+import { useItems } from "./hooks/useItems";
+import { useLiveFeed } from "./hooks/useLiveFeed";
 import { useSettings } from "./hooks/useSettings";
 import type { ConsoleStatus } from "./api/native";
+
+const TABS = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "profile", label: "Profile" },
+  { id: "items", label: "Items" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
 
 export default function App() {
   const [settings, updateSettings] = useSettings();
   const [env, setEnv] = useState<Environment | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [tab, setTab] = useState<Tab>("dashboard");
   const heroes = useHeroes();
+  const items = useItems();
 
   useEffect(() => {
     detectEnvironment()
@@ -23,26 +38,53 @@ export default function App() {
 
   const accountId = settings.accountId ?? env?.account?.account_id ?? null;
   const logPath = settings.consoleLogPath ?? env?.console_log_path ?? null;
-  const { status, lines, game } = useConsoleWatch(logPath);
+  const { status, lines, game, report } = useConsoleWatch(logPath, accountId);
+  const { live, stop } = useLiveFeed(report);
 
   return (
     <div className="app">
       <header className="topbar">
         <h1>Deadlock Dash</h1>
+        <nav className="tabs" role="tablist">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              className={`tab ${tab === t.id ? "tab--active" : ""}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
         <StatusPills status={status} game={game} />
         <button className="button" onClick={() => setShowSettings(true)}>
           Settings
         </button>
       </header>
 
-      {accountId === null ? (
+      {tab === "items" ? (
+        <main className="grid">
+          <ItemsPage items={items} />
+        </main>
+      ) : accountId === null ? (
         <section className="panel panel--wide">
           <h2>Welcome</h2>
           <p>Couldn't detect your Steam account. Open Settings and enter your Steam profile.</p>
         </section>
+      ) : tab === "profile" ? (
+        <main className="grid">
+          <ProfilePage selfId={accountId} heroes={heroes} />
+        </main>
       ) : (
         <main className="grid">
-          <LiveMatch accountId={accountId} heroes={heroes} game={game} />
+          {live ? (
+            <LiveScoreboard live={live} accountId={accountId} heroes={heroes} items={items} onStop={stop} />
+          ) : (
+            <LiveMatch accountId={accountId} heroes={heroes} game={game} />
+          )}
+          <MatchReportPanel report={report} heroes={heroes} />
           <RecentMatches accountId={accountId} heroes={heroes} />
           <ConsoleTail lines={lines} status={status} />
         </main>

@@ -61,6 +61,8 @@ export interface ActiveMatchPlayer {
 export interface Hero {
   id: number;
   name: string;
+  /** Internal name, e.g. `hero_ratking`. */
+  class_name?: string;
   images: {
     icon_image_small?: string;
     icon_image_small_webp?: string;
@@ -90,3 +92,40 @@ export const MATCH_MODE_LABELS = [
   "Hero Labs",
   "Placement",
 ];
+
+/** GET /v1/assets/items/by-type/upgrade, reduced to what the UI renders (see lib/itemStats.ts). */
+export interface Item {
+  id: number;
+  name: string;
+  /** Internal name, e.g. `upgrade_clip_size`; `component_items` refer to these. */
+  class_name?: string;
+  item_slot_type?: "weapon" | "vitality" | "spirit" | string;
+  item_tier?: number;
+  cost?: number;
+  /** Buyable in the current shop (shopable and not disabled). */
+  shopable: boolean;
+  is_active_item?: boolean;
+  component_items?: string[];
+  shop_image_small_webp?: string;
+  sections: ItemSection[];
+}
+
+export interface ItemSection {
+  kind: "innate" | "active" | "passive";
+  /** Description markup from the API, with inline icons removed. */
+  text?: string;
+  stats: ItemStat[];
+  /** Status effects the item applies, e.g. "Silenced". */
+  effects: string[];
+}
+
+export interface ItemStat {
+  label: string;
+  value: string;
+  /** How prominently the in-game tooltip shows the stat. */
+  emphasis: "important" | "elevated" | "normal";
+  /** e.g. "against NPCs". */
+  condition?: string;
+  /** A drawback, e.g. reduced move speed. */
+  negative: boolean;
+}

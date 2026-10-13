@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ActiveMatch, Hero, MatchHistoryEntry, SteamProfile } from "./types";
+import { toItem, type RawItem } from "../lib/itemStats";
+import type { ActiveMatch, Hero, Item, MatchHistoryEntry, SteamProfile } from "./types";
 
 type Query = Record<string, string | number | boolean | undefined>;
 
@@ -31,9 +32,18 @@ export function getHeroes(): Promise<Hero[]> {
   );
 }
 
+/** Shop items, slimmed down to what the UI shows (the full response is ~2 MB). */
+export function getItems(): Promise<Map<number, Item>> {
+  return cached("items", 60 * MINUTE, async () => {
+    const list = await apiGet<RawItem[]>("/v1/assets/items/by-type/upgrade");
+    return new Map(list.map((raw) => [raw.id, toItem(raw)]));
+  });
+}
+
+/** Also saves the history to the local database (see src-tauri/src/db.rs). */
 export function getMatchHistory(accountId: number): Promise<MatchHistoryEntry[]> {
   return cached(`history:${accountId}`, 5 * MINUTE, () =>
-    apiGet<MatchHistoryEntry[]>(`/v1/players/${accountId}/match-history`),
+    invoke<MatchHistoryEntry[]>("fetch_match_history", { accountId }),
   );
 }
 

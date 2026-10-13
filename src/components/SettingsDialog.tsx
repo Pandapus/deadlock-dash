@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { searchSteamProfiles } from "../api/client";
-import type { Environment } from "../api/native";
+import { dbStatus, setContribute, type DbStatus, type Environment } from "../api/native";
 import type { SteamProfile } from "../api/types";
 import type { Settings } from "../hooks/useSettings";
 import { parseAccountId } from "../lib/steamId";
@@ -17,9 +17,23 @@ export function SettingsDialog({ settings, env, onSave, onClose }: Props) {
   const [logPath, setLogPath] = useState(settings.consoleLogPath ?? "");
   const [results, setResults] = useState<SteamProfile[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [db, setDb] = useState<DbStatus | null>(null);
+  const [contribute, setContributeInput] = useState(true);
+
+  useEffect(() => {
+    dbStatus()
+      .then((s) => {
+        setDb(s);
+        setContributeInput(s.contribute);
+      })
+      .catch((e) => console.error("Database status failed", e));
+  }, []);
 
   const save = (accountId: number | null) => {
     onSave({ accountId, consoleLogPath: logPath.trim() || null });
+    if (db && contribute !== db.contribute) {
+      setContribute(contribute).catch((e) => console.error("Couldn't save sharing setting", e));
+    }
     onClose();
   };
 
@@ -88,6 +102,25 @@ export function SettingsDialog({ settings, env, onSave, onClose }: Props) {
             <code>-condebug</code>.
           </small>
         </label>
+
+        <div className="field">
+          <span>Match data</span>
+          <label className="checkbox">
+            <input type="checkbox" checked={contribute} onChange={(e) => setContributeInput(e.target.checked)} />
+            Contribute my matches to community stats
+          </label>
+          <small className="muted">
+            Matches are always saved on this PC. Cloud sync isn't built yet, so nothing is uploaded today. When it is,
+            this setting decides whether your saved matches are shared.
+          </small>
+          {db && (
+            <small className="muted">
+              {db.error
+                ? `Database couldn't be opened (${db.error}), so nothing is being saved.`
+                : `${db.matches} matches and ${db.players} players saved in ${db.path}`}
+            </small>
+          )}
+        </div>
 
         <div className="dialog__actions">
           <button type="button" className="button" onClick={onClose}>

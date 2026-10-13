@@ -11,8 +11,11 @@ A second-monitor companion app for [Deadlock](https://store.steampowered.com/app
 
 | Panel | Source | Notes |
 |---|---|---|
-| **Live match** | [`/v1/matches/active`](https://api.deadlock-api.com/docs) from deadlock-api.com | Team souls, a soul-lead graph, both rosters, and a quick scouting line for every player (recent win rate, record on their current hero, most-played heroes). |
-| **Recent matches** | `/v1/players/{account_id}/match-history` | Your last 15 games, plus win rate and KDA over the last 20. |
+| **Live match** | The match's spectator broadcast, parsed by deadlock-api.com ([`/v1/matches/demo/live/query`](https://api.deadlock-api.com/docs), SSE) | Starts automatically when the console log shows you in a match. Every player's name, hero, level, souls, K/D/A, hero damage, items and alive/dead state, plus team souls and a soul-lead graph, the match clock, Street Brawl round and score, a kill feed, and the result. It stays up after the match. Runs behind the real game by Valve's spectator delay. |
+| **Live match (fallback)** | [`/v1/matches/active`](https://api.deadlock-api.com/docs) | Shown when there is no broadcast feed. Covers only the ~200 matches in the in-game Watch tab, but adds scouting (recent win rate, record on their hero, most-played heroes). |
+| **Recent matches** | Local database, topped up from `/v1/players/{account_id}/match-history` | Your last 15 games, plus overall win rate and KDA. Matches the API doesn't have yet still show up from the live feed or your console log. |
+| **Profile** | Local database | Totals, per-hero record and full match list for you, plus everyone you've shared a match with (win–loss with and against them). Click a player to open their profile. |
+| **Match report** | `game/citadel/console.log` | Your hero, deaths with respawn time and the hero on your killcam, hit-registration mismatches, ping/jitter/server relay, FPS, queue and load times, plus plain-language takeaways. Works for every match, live and after it ends. |
 | **Console log** | `game/citadel/console.log` (needs the `-condebug` launch option) | Detects when you're in a game and shows the raw log with a filter. |
 
 It also finds your Steam install, your Deadlock folder, and the Steam account you're logged into by reading Steam's config files (`libraryfolders.vdf`, `loginusers.vdf`).
@@ -21,7 +24,8 @@ It also finds your Steam install, your Deadlock folder, and the Steam account yo
 
 - **Never** reads or writes game memory, and never injects into the game process.
 - **Never** captures or decrypts the game's network traffic.
-- Uses only public data (the delayed spectator feed and match history) and files the game writes on purpose (`console.log`).
+- Uses only public data (the delayed spectator broadcast and match history) and files the game writes on purpose (`console.log`).
+- The live scoreboard shows only what the in-game scoreboard already shows (souls, K/D/A, items). It never queries hero positions, cooldowns or other hidden state.
 
 Valve delays the spectator feed to stop it being used for live advantage, so the app respects that delay.
 
@@ -62,12 +66,15 @@ src-tauri/src/
   lib.rs           Tauri commands: detect_environment, start/stop_console_watch, api_get
   steam.rs         Finds Steam, Deadlock and the logged-in account (with unit tests)
   console_log.rs   Tails console.log, emits lines and parsed game events (with unit tests)
+  match_report.rs  Infers a per-match report from console.log (with unit tests)
   api.rs           Proxy to api.deadlock-api.com (no CORS issues, API key stays in Rust)
+  live.rs          Live scoreboard from the spectator broadcast over SSE (with unit tests)
+  db.rs            Local SQLite store for matches, players and reports (with unit tests)
 src/
   api/             Typed API client, response types, Tauri bridge types
   hooks/           Settings, hero list, console-watch state machine
   lib/             Formatting, stats aggregation, SteamID parsing
-  components/      LiveMatch, NetWorthChart, RecentMatches, ConsoleTail, SettingsDialog
+  components/      LiveMatch, NetWorthChart, RecentMatches, ProfilePage, ConsoleTail, SettingsDialog
 ```
 
 Checks:
@@ -77,15 +84,27 @@ npm run typecheck
 cd src-tauri && cargo test && cargo clippy --all-targets
 ```
 
+## Local database
+
+Matches are saved to SQLite at `%APPDATA%\com.deadlockdash.app\deadlock-dash.db` (Tauri's app data folder on other platforms). Three sources feed it:
+
+1. **Console report**: your matches only, no result or scoreboard. It's the one source that doesn't depend on a third party.
+2. **Live broadcast**: all 12 players' names, heroes, stats and items, saved every 30 s and when the feed ends.
+3. **API match history**: one player per match, with the authoritative result. Saved whenever the app fetches it, including when it scouts other players.
+
+Each row remembers the best source that wrote it. A better source overwrites a worse one, and a worse one only fills in blanks, so the order things arrive in doesn't matter. `src-tauri/src/db.rs` has the schema and these rules.
+
+Every row has `updated_at` and `synced_at`, ready for a future cloud sync to pick up whatever changed. The **Contribute my matches** setting (on by default) is the user's opt-out from that sync. Nothing is uploaded yet.
+
 ## Known gaps
 
-1. **The live panel only works for some matches.** `/v1/matches/active` returns only the ~200 matches shown in the in-game **Watch** tab, so most of your own matches won't show up in it. The panel says so when that happens.
-2. **The console.log patterns are guesses.** The regexes in `src-tauri/src/console_log.rs` (`parse_line`) are based on typical Source 2 output and haven't been checked against a real Deadlock log yet. Play a match with `-condebug` on, look through the Console panel (use the filter), and update the patterns and tests.
+1. **Live feed rate limits.** Turning a match ID into a broadcast URL spectates the lobby, which is limited to 6 per hour per IP without an API key. The app checks the free `/v1/matches/live/urls` list first and caches each URL, so it uses at most one lookup per match. The broadcast relay needs a minute or two after a match starts before it has data. To test the feed against any live match, run `DEADLOCK_BROADCAST_URL=<url> cargo test live_broadcast -- --ignored --nocapture`.
+2. **The match report is inferred.** The log has no scoreboard, so kills, souls, items and the result aren't in it. `src-tauri/src/match_report.rs` was checked against a real Street Brawl log (build 10932); its doc comment explains how each field is derived. Deaths come from the client pausing prediction while you're dead, and the roster is approximate. To check a new log, run `DEADLOCK_CONSOLE_LOG=<path> cargo test real_log -- --ignored --nocapture`. The older `parse_line` patterns in `console_log.rs` are still mostly guesses.
 3. **Match history can be incomplete.** deadlock-api gets full history only for accounts that are friends with one of its bots. For other accounts it returns what it has stored. See their [ingest page](https://deadlock-api.com/ingest-cache).
 
 ## Roadmap
 
-- **Live data for any match.** `GET /v1/matches/{match_id}/live/url` spectates a match and returns a broadcast URL. A Source 2 broadcast parser such as [haste](https://github.com/blukai/haste) (Rust, so it fits in `src-tauri`) can stream full match state from it: every player's souls, items, kills, objectives. Limits: 6 requests/hour per IP without an API key. The data is delayed like any spectator feed. The match ID would come from the console log (once gap 2 is fixed) or from the player's match history.
+- **Scouting in the live scoreboard.** Merge the fallback panel's per-player history (recent win rate, record on their hero) into the broadcast scoreboard.
 - **Post-match breakdown** from the replay file (`/v1/matches/{match_id}/metadata`, or demo parsing).
 - Compact or always-on-top mode, a tray icon, and remembering window position per monitor.
 - If Valve ever adds official Game State Integration (as in CS2 and Dota 2), switch the live panel to it.

@@ -15,9 +15,11 @@ tauri-build = { version = "2.7.2", features = [] }
 [dependencies]
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "native-tls", "http2", "system-proxy", "query"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tauri = { version = "2.12.3", features = [] }
+tokio = { version = "1.53.2", features = ["time"] }
 
 [target."cfg(windows)".dependencies]
 winreg = "0.56.0"

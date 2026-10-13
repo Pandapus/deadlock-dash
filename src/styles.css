@@ -1,3 +1,16 @@
+@font-face {
+  font-family: "Valve Pulp";
+  src: url("./assets/fonts/ValvePulp-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Valve Occult";
+  src: url("./assets/fonts/ValveOccult-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
 /* Dark-only UI: this sits on a second monitor next to a dark game. */
 :root {
   color-scheme: dark;
@@ -19,6 +32,15 @@
   /* Status: always paired with a text label. */
   --good: #0ca30c;
   --bad: #d03b3b;
+
+  /* Item slot colours, matching the in-game shop. */
+  --slot-weapon: #d08a3c;
+  --slot-vitality: #6aaa3f;
+  --slot-spirit: #a678e0;
+
+  /* Deadlock display faces: Pulp for titles, Occult for sub-headings/labels. */
+  --font-display: "Valve Pulp", Inter, "Segoe UI", sans-serif;
+  --font-label: "Valve Occult", Inter, "Segoe UI", sans-serif;
 
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
@@ -43,14 +65,24 @@ h3 {
   font-weight: 600;
 }
 h1 {
-  font-size: 18px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--accent);
 }
 h2 {
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 h3 {
-  font-size: 13px;
+  font-family: var(--font-label);
+  font-size: 14px;
+  letter-spacing: 0.03em;
   margin-bottom: 6px;
 }
 
@@ -222,7 +254,9 @@ code {
   flex-direction: column;
 }
 .stat__label {
+  font-family: var(--font-label);
   font-size: 12px;
+  letter-spacing: 0.03em;
   color: var(--ink-muted);
 }
 .stat__value {
@@ -419,4 +453,408 @@ code {
   width: 24px;
   height: 24px;
   border-radius: 4px;
+}
+
+.insights {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.insight {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  border-left: 3px solid var(--baseline);
+  color: var(--ink-secondary);
+}
+.insight--good {
+  border-left-color: var(--good);
+}
+.insight--warn {
+  border-left-color: var(--accent);
+}
+.insight__tag {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  width: 40px;
+}
+.report-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.report-details summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 16px;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.kv dt {
+  color: var(--ink-muted);
+}
+.kv dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-status {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.live-table td {
+  vertical-align: middle;
+}
+.live-table tr.me td {
+  background: var(--surface-raised);
+}
+.live-table tr.me td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.live-table tr.dead td {
+  color: var(--ink-muted);
+}
+.live-table tr.dead .hero-badge img {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.live-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.live-player__name {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--ink-muted);
+}
+.tag--accent {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 230px;
+}
+.item {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.item--weapon {
+  border-color: var(--slot-weapon);
+}
+.item--vitality {
+  border-color: var(--slot-vitality);
+}
+.item--spirit {
+  border-color: var(--slot-spirit);
+}
+.killfeed-title {
+  margin-top: 14px;
+}
+.killfeed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.killfeed li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-left: 3px solid var(--baseline);
+}
+.killfeed li.killfeed--ally {
+  border-left-color: var(--ally);
+}
+.killfeed li.killfeed--enemy {
+  border-left-color: var(--enemy);
+}
+.killfeed__time {
+  width: 44px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+}
+.killfeed__arrow {
+  color: var(--ink-muted);
+}
+.killfeed__souls {
+  margin-left: auto;
+  font-size: 12px;
+}
+.item {
+  flex-shrink: 0;
+  cursor: help;
+}
+.item:focus-visible,
+.item-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.item--large {
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+  border-width: 2px;
+}
+.item-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 3px 3px;
+  border-radius: 6px;
+  cursor: help;
+  min-width: 0;
+  max-width: 100%;
+  justify-self: start;
+}
+.item-entry:hover {
+  background: var(--surface-raised);
+}
+.item-entry .item {
+  cursor: inherit;
+}
+.item-entry__name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hover card, portalled to <body> so tables and panels don't clip it. */
+.item-card-float {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+}
+.item-card {
+  width: 300px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--baseline);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  white-space: normal;
+}
+.item-card--weapon {
+  border-top-color: var(--slot-weapon);
+}
+.item-card--vitality {
+  border-top-color: var(--slot-vitality);
+}
+.item-card--spirit {
+  border-top-color: var(--slot-spirit);
+}
+.item-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.item-card__name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.item-card__meta {
+  color: var(--ink-muted);
+}
+.item-card__cost {
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.item-card__builds {
+  margin-top: 4px;
+  color: var(--ink-secondary);
+}
+.item-card__section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--grid);
+}
+.item-card__section-title {
+  font-family: var(--font-label);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin-bottom: 4px;
+}
+.item-card__section--active .item-card__section-title {
+  color: var(--accent);
+}
+.item-card__text {
+  margin: 0 0 6px;
+  color: var(--ink-secondary);
+}
+.item-card__effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.item-card__stats {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.item-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.item-stat dt {
+  color: var(--ink-secondary);
+}
+.item-stat dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.item-stat--important dd,
+.item-stat--elevated dd {
+  color: var(--ink);
+  font-size: 13px;
+}
+.item-stat--important dt,
+.item-stat--elevated dt {
+  color: var(--ink);
+}
+.item-stat--negative dd {
+  color: var(--enemy);
+}
+.rt-highlight {
+  color: var(--ink);
+  font-weight: 600;
+}
+.rt-diminish {
+  color: var(--ink-muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+.tab {
+  font: inherit;
+  color: var(--ink-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.tab:hover {
+  color: var(--ink);
+}
+.tab--active {
+  color: var(--ink);
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+/* Items tab: slot columns × tier rows, like the in-game shop. */
+.shop {
+  display: grid;
+  grid-template-columns: 84px repeat(3, minmax(0, 1fr));
+  column-gap: 12px;
+}
+.shop__slot {
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--baseline);
+}
+.shop__slot--weapon {
+  color: var(--slot-weapon);
+  border-bottom-color: var(--slot-weapon);
+}
+.shop__slot--vitality {
+  color: var(--slot-vitality);
+  border-bottom-color: var(--slot-vitality);
+}
+.shop__slot--spirit {
+  color: var(--slot-spirit);
+  border-bottom-color: var(--slot-spirit);
+}
+.shop__tier,
+.shop__cell {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--grid);
+}
+.shop__tier {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.shop__cell {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px;
+  align-content: start;
+}
+
+.profile-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.profile-title__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }

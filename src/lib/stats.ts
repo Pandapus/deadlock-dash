@@ -1,3 +1,4 @@
+import type { Totals } from "../api/native";
 import { PlayerMatchOutcome, type MatchHistoryEntry } from "../api/types";
 
 export interface WinLoss {
@@ -48,4 +49,15 @@ export function summarize(history: MatchHistoryEntry[], limit = 20): PlayerSumma
 export function heroRecord(history: MatchHistoryEntry[], heroId: number): WinLoss {
   const games = history.filter((m) => m.hero_id === heroId && isScored(m));
   return { games: games.length, wins: games.filter(isWin).length };
+}
+
+/** Win rate over decided matches in locally saved totals. */
+export function totalsWinRate(t: Totals): number | null {
+  const decided = t.wins + t.losses;
+  return decided ? t.wins / decided : null;
+}
+
+/** Overall KDA across matches with a scoreboard. */
+export function totalsKda(t: Totals): number | null {
+  return t.with_stats ? (t.kills + t.assists) / Math.max(1, t.deaths) : null;
 }

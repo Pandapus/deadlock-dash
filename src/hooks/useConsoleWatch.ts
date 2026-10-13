@@ -7,6 +7,7 @@ import {
   type ConsoleLines,
   type ConsoleStatus,
   type GameEvent,
+  type MatchReport,
 } from "../api/native";
 
 const MAX_LINES = 1000;
@@ -33,19 +34,23 @@ function applyEvent(state: GameState, event: GameEvent): GameState {
   }
 }
 
-export function useConsoleWatch(path: string | null) {
+/** `accountId` is who the console reports get saved under. */
+export function useConsoleWatch(path: string | null, accountId: number | null) {
   const [status, setStatus] = useState<ConsoleStatus | null>(null);
   const [lines, setLines] = useState<string[]>([]);
   const [game, setGame] = useState<GameState>(INITIAL_GAME);
+  const [report, setReport] = useState<MatchReport | null>(null);
 
   useEffect(() => {
     if (!path) return;
     setStatus(null);
     setLines([]);
     setGame(INITIAL_GAME);
+    setReport(null);
 
     const unlisten = Promise.all([
       listen<ConsoleStatus>(ConsoleEvents.status, (e) => setStatus(e.payload)),
+      listen<MatchReport | null>(ConsoleEvents.match, (e) => setReport(e.payload)),
       listen<GameEvent>(ConsoleEvents.game, (e) => setGame((g) => applyEvent(g, e.payload))),
       listen<ConsoleLines>(ConsoleEvents.lines, ({ payload }) => {
         if (payload.reset) setGame(INITIAL_GAME);
@@ -53,13 +58,13 @@ export function useConsoleWatch(path: string | null) {
       }),
     ]);
     // Start only once listeners are attached so the initial backlog isn't missed.
-    unlisten.then(() => startConsoleWatch(path)).catch((e) => console.error(e));
+    unlisten.then(() => startConsoleWatch(path, accountId)).catch((e) => console.error(e));
 
     return () => {
       stopConsoleWatch().catch(() => {});
       unlisten.then((fns) => fns.forEach((fn) => fn()));
     };
-  }, [path]);
+  }, [path, accountId]);
 
-  return { status, lines, game };
+  return { status, lines, game, report };
 }
