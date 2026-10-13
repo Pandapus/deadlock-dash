@@ -4,6 +4,7 @@ mod db;
 mod live;
 mod match_report;
 mod steam;
+mod updater;
 
 use std::path::PathBuf;
 
@@ -99,6 +100,7 @@ async fn set_contribute(store: State<'_, Store>, contribute: bool) -> Result<(),
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let store = match app.path().app_data_dir() {
                 Ok(dir) => Store::open(&dir.join(DB_FILE)),
@@ -108,6 +110,7 @@ pub fn run() {
                 }
             };
             app.manage(store);
+            updater::check_on_startup(app.handle().clone());
             Ok(())
         })
         .manage(DeadlockApi::new())
