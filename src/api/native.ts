@@ -62,7 +62,7 @@ export interface HitCounts {
   other: number;
 }
 
-/** Mirrors `live::LiveState`. Teams: 2 = Amber, 3 = Sapphire. */
+/** Mirrors `live::LiveState`. Teams: 2 = Amber (Hidden King), 3 = Sapphire (Archmother). */
 export interface LiveState {
   match_id: number;
   status: "resolving" | "waiting" | "live" | "ended" | "error";
@@ -160,7 +160,7 @@ export interface Totals {
   seconds_played: number;
 }
 
-/** Mirrors `db::PlayedMatch`. Teams: 0 = Amber, 1 = Sapphire. */
+/** Mirrors `db::PlayedMatch`. Teams: 0 = Amber (Hidden King), 1 = Sapphire (Archmother). */
 export interface PlayedMatch {
   match_id: number;
   start_time: number | null;
@@ -210,10 +210,58 @@ export interface Profile {
   encounters: Encounter[];
 }
 
+/** Mirrors `db::MatchPlayer`. Stats are null where no source saw them. */
+export interface MatchPlayer {
+  account_id: number;
+  persona_name: string | null;
+  team: number | null;
+  hero_id: number | null;
+  level: number | null;
+  net_worth: number | null;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+  last_hits: number | null;
+  denies: number | null;
+  hero_damage: number | null;
+  healing: number | null;
+  objective_damage: number | null;
+  abandoned: boolean | null;
+  /** Item ids in purchase order, as last seen on the broadcast. */
+  items: number[] | null;
+  source: PlayedMatch["source"];
+}
+
+/** Mirrors `db::MatchDetail`. Teams: 0 = Amber (Hidden King), 1 = Sapphire (Archmother). */
+export interface MatchDetail {
+  match_id: number;
+  start_time: number | null;
+  duration_s: number | null;
+  game_mode: number | null;
+  match_mode: number | null;
+  winning_team: number | null;
+  build: number | null;
+  map: string | null;
+  source: PlayedMatch["source"];
+  souls_history: { clock: number; amber: number; sapphire: number }[];
+  players: MatchPlayer[];
+  /** Oldest first. Accounts are null for troopers, objectives and unmapped players. */
+  kills: {
+    clock: number | null;
+    victim_account: number | null;
+    attacker_account: number | null;
+    assister_accounts: number[];
+    souls: number;
+  }[];
+  report: MatchReport | null;
+  report_account: number | null;
+}
+
 /** Fired whenever new matches are saved locally. */
 export const DB_CHANGED_EVENT = "db://changed";
 
 export const playerProfile = (accountId: number, limit?: number) =>
   invoke<Profile>("player_profile", { accountId, limit });
-export const dbStatus = () => invoke<DbStatus>("db_status");
+export const matchDetail = (matchId: number) => invoke<MatchDetail | null>("match_detail", { matchId });
+export const dbStatus =() => invoke<DbStatus>("db_status");
 export const setContribute = (contribute: boolean) => invoke<void>("set_contribute", { contribute });

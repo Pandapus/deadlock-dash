@@ -1,23 +1,50 @@
 # Builds the Windows installer and publishes it as a GitHub release.
 #
-# Trigger: push a tag like `v0.2.0`. The tag sets the app version, so the
-# versions in tauri.conf.json/Cargo.toml/package.json don't need bumping.
-# The release also carries `latest.json`, which installed copies poll on
-# startup to auto-update (see src-tauri/src/updater.rs).
+# Every push to main (i.e. every merged PR) releases the next patch version:
+# the newest `v*` tag plus one (v0.1.1 -> v0.1.2), tagged on the merged
+# commit. For a minor or major bump, push the tag yourself (`v0.2.0`); that
+# runs this workflow for the tag, and later merges count up from it.
+#
+# The version comes from the tag, so tauri.conf.json/Cargo.toml/package.json
+# don't need bumping. The release also carries `latest.json`, which installed
+# copies poll on startup to auto-update (see src-tauri/src/updater.rs).
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
 
 permissions:
   contents: write
+
+# Releases go out one at a time, so two quick merges can't pick the same tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags, to find the newest version
+
+      - name: Pick version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            LATEST=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST:-v0.1.0}"
+            TAG="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG"
 
       - uses: actions/setup-node@v4
         with:
@@ -30,28 +57,30 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      - name: Set version from tag
+      - name: Set version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           node -e '
             const fs = require("fs");
             const p = "src-tauri/tauri.conf.json";
             const c = JSON.parse(fs.readFileSync(p, "utf8"));
             c.version = process.argv[1];
             fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
-          ' "$VERSION"
+          ' "${{ steps.version.outputs.version }}"
 
       - run: npm ci
 
+      # Creates the tag on this commit if it doesn't exist yet. Tags made with
+      # GITHUB_TOKEN don't trigger workflows, so this doesn't run twice.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Deadlock Dash ${{ github.ref_name }}
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: Deadlock Dash ${{ steps.version.outputs.tag }}
+          releaseCommitish: ${{ github.sha }}
           releaseBody: See the assets below to download and install this version.
           releaseDraft: false
           prerelease: false

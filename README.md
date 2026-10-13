@@ -51,7 +51,9 @@ npm run tauri build    # installer in src-tauri/target/release/bundle/
 
 ### Releases and auto-update
 
-Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the NSIS installer (`Deadlock Dash_<version>_x64-setup.exe`) and publishes it on the Releases page together with a signed `latest.json`:
+Every merge to `main` runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It tags the merged commit with the next patch version (newest `v*` tag + 1, e.g. `v0.1.1` → `v0.1.2`), builds the NSIS installer (`Deadlock Dash_<version>_x64-setup.exe`) and publishes it on the Releases page together with a signed `latest.json`.
+
+For a minor or major bump, push the tag yourself; later merges count up from it:
 
 ```sh
 git tag v0.2.0

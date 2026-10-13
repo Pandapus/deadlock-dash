@@ -2,6 +2,7 @@ import { isTimerOn } from "../hooks/useTimers";
 import { testVoice } from "../hooks/useTimerAlerts";
 import type { TimerPrefs } from "../hooks/useSettings";
 import { formatClock, formatDuration } from "../lib/format";
+import type { GameMode } from "../lib/gameMode";
 import { TIMER_KINDS, type TimerEvent, type TimerKind } from "../lib/timers";
 
 const SHOWN = 8;
@@ -14,11 +15,12 @@ interface Props {
   nudge: (secs: number) => void;
   timers: TimerEvent[];
   hasFeed: boolean;
+  mode: GameMode;
   prefs: TimerPrefs;
   onPrefs: (prefs: TimerPrefs) => void;
 }
 
-export function TimersPanel({ clock, delay, offset, nudge, timers, hasFeed, prefs, onPrefs }: Props) {
+export function TimersPanel({ clock, delay, offset, nudge, timers, hasFeed, mode, prefs, onPrefs }: Props) {
   const toggle = (kind: TimerKind) =>
     onPrefs({ ...prefs, enabled: { ...prefs.enabled, [kind]: !isTimerOn(prefs, kind) } });
 
@@ -44,6 +46,8 @@ export function TimersPanel({ clock, delay, offset, nudge, timers, hasFeed, pref
           Timers start when the game goes live. They need the console log (the <code>-condebug</code> launch option) to
           know the real match clock, since the spectator feed runs behind.
         </p>
+      ) : mode === "street_brawl" ? (
+        <p className="muted">Street Brawl has its own rules, so spawn timers are off for this match.</p>
       ) : (
         <>
           <p className="muted timers__note">

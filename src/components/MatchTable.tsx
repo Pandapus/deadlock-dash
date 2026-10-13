@@ -5,16 +5,24 @@ import { formatDuration, formatKda, formatRelativeTime, formatSouls } from "../l
 import { heroByCodename } from "../lib/matchInsights";
 import { HeroBadge } from "./HeroBadge";
 
-const SOURCES: Record<PlayedMatch["source"], { label: string; title: string }> = {
+export const SOURCES: Record<PlayedMatch["source"], { label: string; title: string }> = {
   history: { label: "API", title: "Match history from deadlock-api" },
   live: { label: "Live", title: "Recorded from the live broadcast" },
   console: { label: "Log", title: "Only in your console.log: no result or scoreboard" },
 };
 
-/** Matches from the local database, newest first. */
-export function MatchTable({ matches, heroes }: { matches: PlayedMatch[]; heroes: HeroMap }) {
+/** Matches from the local database, newest first. Rows open the match when `onOpen` is set. */
+export function MatchTable({
+  matches,
+  heroes,
+  onOpen,
+}: {
+  matches: PlayedMatch[];
+  heroes: HeroMap;
+  onOpen?: (matchId: number) => void;
+}) {
   return (
-    <table className="table">
+    <table className={`table ${onOpen ? "table--clickable" : ""}`}>
       <thead>
         <tr>
           <th>Result</th>
@@ -33,7 +41,22 @@ export function MatchTable({ matches, heroes }: { matches: PlayedMatch[]; heroes
           const hasStats = m.kills != null && m.deaths != null && m.assists != null;
           const source = SOURCES[m.source];
           return (
-            <tr key={m.match_id} className={m.abandoned ? "abandoned" : undefined}>
+            <tr
+              key={m.match_id}
+              className={m.abandoned ? "abandoned" : undefined}
+              tabIndex={onOpen ? 0 : undefined}
+              title={onOpen ? `Open match ${m.match_id}` : undefined}
+              onClick={onOpen && (() => onOpen(m.match_id))}
+              onKeyDown={
+                onOpen &&
+                ((e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpen(m.match_id);
+                  }
+                })
+              }
+            >
               <td>
                 <ResultPill won={m.won} />
               </td>
@@ -57,7 +80,7 @@ export function MatchTable({ matches, heroes }: { matches: PlayedMatch[]; heroes
   );
 }
 
-function ResultPill({ won }: { won: boolean | null }) {
+export function ResultPill({ won }: { won: boolean | null }) {
   if (won === true) return <span className="pill pill--good">Win</span>;
   if (won === false) return <span className="pill pill--bad">Loss</span>;
   return <span className="pill">—</span>;

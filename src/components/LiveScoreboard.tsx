@@ -6,8 +6,10 @@ import { HeroBadge } from "./HeroBadge";
 import { ItemIcon } from "./ItemTooltip";
 import { NetWorthChart } from "./NetWorthChart";
 import { Stat } from "./Stat";
+import { detectGameMode } from "../lib/gameMode";
+import { sidesClass, TEAM_BY_LIVE_ID, TEAM_NAMES } from "../lib/teams";
 
-const TEAM_NAMES: Record<number, string> = { 2: "Amber", 3: "Sapphire" };
+const teamName = (t: number) => TEAM_NAMES[TEAM_BY_LIVE_ID[t]];
 const KILLFEED_SHOWN = 8;
 
 const STATUS_LABELS: Record<LiveState["status"], string> = {
@@ -23,6 +25,8 @@ interface Props {
   accountId: number;
   heroes: HeroMap;
   items: ItemMap;
+  /** Map from the console log, when it is this match. */
+  map?: string | null;
   onStop: () => void;
 }
 
@@ -30,15 +34,15 @@ interface Props {
  * Scoreboard streamed from the match's spectator broadcast (see
  * src-tauri/src/live.rs). Runs behind the real game by Valve's spectator delay.
  */
-export function LiveScoreboard({ live, accountId, heroes, items, onStop }: Props) {
+export function LiveScoreboard({ live, accountId, heroes, items, map, onStop }: Props) {
   const me = live.players.find((p) => p.account_id === accountId);
-  // If you aren't in the match (e.g. spectating), show Amber on the left.
+  // If you aren't in the match (e.g. spectating), show the Hidden King on the left.
   const myTeam = me?.team ?? 2;
   const enemyTeam = myTeam === 2 ? 3 : 2;
   const team = (t: number) => live.players.filter((p) => p.team === t);
   const souls = (t: number) => team(t).reduce((s, p) => s + p.net_worth, 0);
   const lead = souls(myTeam) - souls(enemyTeam);
-  const streetBrawl = live.round > 0 || live.amber_score > 0 || live.sapphire_score > 0;
+  const streetBrawl = detectGameMode(map, live) === "street_brawl";
   const score = (t: number) => (t === 2 ? live.amber_score : live.sapphire_score);
   const running = live.status === "live" || live.status === "waiting" || live.status === "resolving";
   const samples = live.souls_history.map((s) => ({
@@ -48,7 +52,7 @@ export function LiveScoreboard({ live, accountId, heroes, items, onStop }: Props
   const bySlot = new Map(live.players.map((p) => [p.slot, p]));
 
   return (
-    <section className="panel panel--wide">
+    <section className={`panel panel--wide ${sidesClass(TEAM_BY_LIVE_ID[myTeam])}`}>
       <header className="panel__header">
         <h2>Live match</h2>
         <span className="live-status">
@@ -84,8 +88,8 @@ export function LiveScoreboard({ live, accountId, heroes, items, onStop }: Props
                 tone={score(myTeam) > score(enemyTeam) ? "ally" : score(myTeam) < score(enemyTeam) ? "enemy" : undefined}
               />
             )}
-            <Stat label={me ? "Your team" : TEAM_NAMES[myTeam]} value={formatSouls(souls(myTeam))} />
-            <Stat label={me ? "Enemy" : TEAM_NAMES[enemyTeam]} value={formatSouls(souls(enemyTeam))} />
+            <Stat label={me ? "Your team" : teamName(myTeam)} value={formatSouls(souls(myTeam))} />
+            <Stat label={me ? "Enemy" : teamName(enemyTeam)} value={formatSouls(souls(enemyTeam))} />
             <Stat
               label="Soul lead"
               value={formatSignedSouls(lead)}
@@ -94,7 +98,7 @@ export function LiveScoreboard({ live, accountId, heroes, items, onStop }: Props
             {live.winning_team != null && (
               <Stat
                 label="Result"
-                value={me ? (live.winning_team === myTeam ? "Victory" : "Defeat") : `${TEAM_NAMES[live.winning_team]} won`}
+                value={me ? (live.winning_team === myTeam ? "Victory" : "Defeat") : `${teamName(live.winning_team)} won`}
                 tone={live.winning_team === myTeam ? "ally" : "enemy"}
               />
             )}
@@ -106,7 +110,7 @@ export function LiveScoreboard({ live, accountId, heroes, items, onStop }: Props
             {[myTeam, enemyTeam].map((t) => (
               <TeamTable
                 key={t}
-                title={me ? (t === myTeam ? "Your team" : "Enemy team") : `${TEAM_NAMES[t]}`}
+                title={me ? (t === myTeam ? "Your team" : "Enemy team") : teamName(t)}
                 tone={t === myTeam ? "ally" : "enemy"}
                 players={team(t).sort((a, b) => b.net_worth - a.net_worth)}
                 meSlot={me?.slot}

@@ -9,10 +9,26 @@ export interface NetWorthSample {
 }
 
 const HEIGHT = 140;
-const PAD = { top: 10, right: 12, bottom: 20, left: 44 };
+/** Exported so charts stacked under this one can line up their time axes. */
+export const CHART_PAD = { top: 10, right: 12, bottom: 20, left: 44 };
+const PAD = CHART_PAD;
+
+export interface TeamLabels {
+  ally: string;
+  enemy: string;
+}
+const DEFAULT_LABELS: TeamLabels = { ally: "Your team", enemy: "Enemy" };
+
+interface Props {
+  samples: NetWorthSample[];
+  emptyText?: string;
+  /** Time range of the x axis; defaults to the samples' own. */
+  domain?: [number, number];
+  labels?: TeamLabels;
+}
 
 /** Diverging area chart of the soul lead over time: up = your team ahead. */
-export function NetWorthChart({ samples, emptyText }: { samples: NetWorthSample[]; emptyText?: string }) {
+export function NetWorthChart({ samples, emptyText, domain, labels = DEFAULT_LABELS }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
 
@@ -32,18 +48,29 @@ export function NetWorthChart({ samples, emptyText }: { samples: NetWorthSample[
           {emptyText ?? "Soul lead graph appears after a couple of updates (the feed refreshes about once a minute)."}
         </p>
       ) : (
-        <Plot samples={samples} width={width} />
+        <Plot samples={samples} width={width} domain={domain} labels={labels} />
       )}
     </div>
   );
 }
 
-function Plot({ samples, width }: { samples: NetWorthSample[]; width: number }) {
+function Plot({
+  samples,
+  width,
+  domain,
+  labels,
+}: {
+  samples: NetWorthSample[];
+  width: number;
+  domain?: [number, number];
+  labels: TeamLabels;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const clipId = useId();
 
-  const t0 = samples[0].t;
-  const t1 = samples[samples.length - 1].t;
+  const [t0, t1] = domain ?? [samples[0].t, samples[samples.length - 1].t];
+  const first = samples[0].t;
+  const last = samples[samples.length - 1].t;
   const extent = Math.max(1000, ...samples.map((s) => Math.abs(s.diff)));
   const innerW = Math.max(1, width - PAD.left - PAD.right);
   const innerH = HEIGHT - PAD.top - PAD.bottom;
@@ -52,7 +79,7 @@ function Plot({ samples, width }: { samples: NetWorthSample[]; width: number }) 
   const zeroY = y(0);
 
   const line = samples.map((s, i) => `${i ? "L" : "M"}${x(s.t)},${y(s.diff)}`).join("");
-  const area = `${line}L${x(t1)},${zeroY}L${x(t0)},${zeroY}Z`;
+  const area = `${line}L${x(last)},${zeroY}L${x(first)},${zeroY}Z`;
 
   const onMove = (e: React.PointerEvent<SVGRectElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -69,8 +96,8 @@ function Plot({ samples, width }: { samples: NetWorthSample[]; width: number }) 
   return (
     <>
       <div className="chart__legend">
-        <span><i className="swatch swatch--ally" /> Your team ahead</span>
-        <span><i className="swatch swatch--enemy" /> Enemy ahead</span>
+        <span><i className="swatch swatch--ally" /> {labels.ally} ahead</span>
+        <span><i className="swatch swatch--enemy" /> {labels.enemy} ahead</span>
       </div>
       <svg width={width} height={HEIGHT} role="img" aria-label="Soul lead over time">
         <defs>
@@ -118,7 +145,7 @@ function Plot({ samples, width }: { samples: NetWorthSample[]; width: number }) 
         >
           <strong>{formatDuration(hovered.t)}</strong>
           <span>
-            {hovered.diff === 0 ? "Even" : `${hovered.diff > 0 ? "Your team" : "Enemy"} ${formatSignedSouls(Math.abs(hovered.diff))}`}
+            {hovered.diff === 0 ? "Even" : `${hovered.diff > 0 ? labels.ally : labels.enemy} ${formatSignedSouls(Math.abs(hovered.diff))}`}
           </span>
         </div>
       )}
@@ -126,7 +153,7 @@ function Plot({ samples, width }: { samples: NetWorthSample[]; width: number }) 
         <summary>Show data</summary>
         <table className="table">
           <thead>
-            <tr><th>Time</th><th className="num">Soul lead (your team)</th></tr>
+            <tr><th>Time</th><th className="num">Soul lead ({labels.ally})</th></tr>
           </thead>
           <tbody>
             {samples.map((s) => (

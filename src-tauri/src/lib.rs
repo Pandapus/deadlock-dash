@@ -87,6 +87,15 @@ async fn player_profile(
     store.profile(account_id, limit.unwrap_or(50))
 }
 
+/// Everything stored locally about one match; `None` if it isn't saved.
+#[tauri::command]
+async fn match_detail(
+    store: State<'_, Store>,
+    match_id: u64,
+) -> Result<Option<db::MatchDetail>, String> {
+    store.match_detail(match_id)
+}
+
 #[tauri::command]
 async fn db_status(store: State<'_, Store>) -> Result<db::Status, String> {
     store.status()
@@ -125,6 +134,7 @@ pub fn run() {
             api_get,
             fetch_match_history,
             player_profile,
+            match_detail,
             db_status,
             set_contribute,
         ])

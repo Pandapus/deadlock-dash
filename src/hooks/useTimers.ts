@@ -1,4 +1,5 @@
 import type { LiveState, MatchReport } from "../api/native";
+import { detectGameMode } from "../lib/gameMode";
 import { TIMER_KINDS, upcomingTimers, type TimerKind } from "../lib/timers";
 import { useMatchClock } from "./useMatchClock";
 import type { TimerPrefs } from "./useSettings";
@@ -15,8 +16,10 @@ export function isTimerOn(prefs: TimerPrefs, kind: TimerKind): boolean {
 export function useTimers(report: MatchReport | null, live: LiveState | null, prefs: TimerPrefs) {
   const { clock, delay, offset, nudge } = useMatchClock(report, live);
   const feed = live && live.match_id === report?.match_id ? live : null;
+  const mode = detectGameMode(report?.map, feed);
+  // The schedule is for the standard mode; Street Brawl has its own rules.
   const timers =
-    clock === null ? [] : upcomingTimers(clock, HORIZON_SECS, feed).filter((t) => isTimerOn(prefs, t.kind));
+    clock === null || mode === "street_brawl" ? [] : upcomingTimers(clock, HORIZON_SECS, feed).filter((t) => isTimerOn(prefs, t.kind));
   useTimerAlerts(clock, timers, prefs.lead, prefs.voice);
-  return { clock, delay, offset, nudge, timers, hasFeed: feed !== null };
+  return { clock, delay, offset, nudge, timers, hasFeed: feed !== null, mode };
 }
