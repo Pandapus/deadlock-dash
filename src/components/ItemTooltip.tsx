@@ -142,7 +142,7 @@ export function ItemCard({ item, items }: { item: Item; items: ItemMap }) {
  * Renders the API's description markup as React nodes. Only text, line breaks
  * and highlight spans are kept, so no API-supplied HTML reaches the DOM.
  */
-function RichText({ html }: { html: string }) {
+export function RichText({ html }: { html: string }) {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
   return <>{toNodes(doc.body.childNodes)}</>;
 }

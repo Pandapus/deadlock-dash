@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { detectEnvironment, type Environment } from "./api/native";
 import { ConsoleTail } from "./components/ConsoleTail";
+import { HeroesPage } from "./components/HeroesPage";
 import { ItemsPage } from "./components/ItemsPage";
 import { LiveMatch } from "./components/LiveMatch";
 import { LiveScoreboard } from "./components/LiveScoreboard";
@@ -20,6 +21,7 @@ import type { ConsoleStatus } from "./api/native";
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "profile", label: "Profile" },
+  { id: "heroes", label: "Heroes" },
   { id: "items", label: "Items" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
@@ -67,7 +69,11 @@ export default function App() {
         </button>
       </header>
 
-      {tab === "items" ? (
+      {tab === "heroes" ? (
+        <main className="grid">
+          <HeroesPage items={items} />
+        </main>
+      ) : tab === "items" ? (
         <main className="grid">
           <ItemsPage items={items} />
         </main>
