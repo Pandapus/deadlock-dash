@@ -8,11 +8,13 @@ import { MatchReportPanel } from "./components/MatchReportPanel";
 import { ProfilePage } from "./components/ProfilePage";
 import { RecentMatches } from "./components/RecentMatches";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { TimersPanel } from "./components/TimersPanel";
 import { useConsoleWatch, type GameState } from "./hooks/useConsoleWatch";
 import { useHeroes } from "./hooks/useHeroes";
 import { useItems } from "./hooks/useItems";
 import { useLiveFeed } from "./hooks/useLiveFeed";
 import { useSettings } from "./hooks/useSettings";
+import { useTimers } from "./hooks/useTimers";
 import type { ConsoleStatus } from "./api/native";
 
 const TABS = [
@@ -40,6 +42,7 @@ export default function App() {
   const logPath = settings.consoleLogPath ?? env?.console_log_path ?? null;
   const { status, lines, game, report } = useConsoleWatch(logPath, accountId);
   const { live, stop } = useLiveFeed(report);
+  const timers = useTimers(report, live, settings.timers);
 
   return (
     <div className="app">
@@ -83,6 +86,9 @@ export default function App() {
             <LiveScoreboard live={live} accountId={accountId} heroes={heroes} items={items} onStop={stop} />
           ) : (
             <LiveMatch accountId={accountId} heroes={heroes} game={game} />
+          )}
+          {(report?.phase === "intro" || report?.phase === "in_progress") && (
+            <TimersPanel {...timers} prefs={settings.timers} onPrefs={(t) => updateSettings({ timers: t })} />
           )}
           <MatchReportPanel report={report} heroes={heroes} />
           <RecentMatches accountId={accountId} heroes={heroes} />

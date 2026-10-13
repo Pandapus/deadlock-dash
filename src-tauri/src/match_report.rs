@@ -118,6 +118,8 @@ pub struct MatchReport {
     pub queue_secs: Option<u32>,
     /// Match found → game in progress.
     pub load_secs: Option<u32>,
+    /// When the game went live (clock 0:00), as the log's local `MM/DD HH:MM:SS`.
+    pub started_at: Option<String>,
     /// Game in progress → post-game (or now / disconnect).
     pub duration_secs: Option<u32>,
     /// You disconnected before the post-game screen.
@@ -164,6 +166,8 @@ static HERO_MODEL_RE: LazyLock<Regex> =
 pub struct MatchTracker {
     now: u64,
     now_label: String,
+    /// `MM/DD HH:MM:SS` of the last timestamped line.
+    now_stamp: String,
     ready_at: Option<u64>,
     found_at: Option<u64>,
     started_at: Option<u64>,
@@ -217,6 +221,7 @@ impl MatchTracker {
             Some((t, label)) => {
                 self.now = t;
                 self.now_label = label.to_owned();
+                self.now_stamp = line[..14].to_owned();
                 line[15..].trim_start()
             }
             None => line.trim_start(),
@@ -255,6 +260,7 @@ impl MatchTracker {
                 found_at: self.now_label.clone(),
                 queue_secs: self.ready_at.map(|r| self.now.saturating_sub(r) as u32),
                 load_secs: None,
+                started_at: None,
                 duration_secs: None,
                 left_early: false,
                 my_hero: None,
@@ -350,6 +356,7 @@ impl MatchTracker {
                     if self.started_at.is_none() {
                         self.started_at = Some(now);
                         r.load_secs = self.found_at.map(|f| now.saturating_sub(f) as u32);
+                        r.started_at = Some(self.now_stamp.clone());
                     }
                 }
                 "PostGame" => {
@@ -574,6 +581,7 @@ mod tests {
         assert_eq!(r.phase, MatchPhase::Ended);
         assert_eq!(r.queue_secs, Some(66));
         assert_eq!(r.load_secs, Some(31));
+        assert_eq!(r.started_at.as_deref(), Some("10/12 21:07:47"));
         assert_eq!(r.duration_secs, Some(9 * 60 + 10));
         assert!(!r.left_early);
         assert_eq!(r.my_hero.as_deref(), Some("ratking"));

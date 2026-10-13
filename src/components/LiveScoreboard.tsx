@@ -1,7 +1,7 @@
 import type { LivePlayer, LiveState } from "../api/native";
 import type { HeroMap } from "../hooks/useHeroes";
 import type { ItemMap } from "../hooks/useItems";
-import { formatDuration, formatSignedSouls, formatSouls } from "../lib/format";
+import { formatClock, formatSignedSouls, formatSouls } from "../lib/format";
 import { HeroBadge } from "./HeroBadge";
 import { ItemIcon } from "./ItemTooltip";
 import { NetWorthChart } from "./NetWorthChart";
@@ -219,8 +219,4 @@ function ItemRow({ ids, items }: { ids: number[]; items: ItemMap }) {
       ))}
     </span>
   );
-}
-
-function formatClock(seconds: number): string {
-  return seconds < 0 ? `−${formatDuration(-seconds)}` : formatDuration(seconds);
 }

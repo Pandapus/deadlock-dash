@@ -27,6 +27,8 @@ export interface MatchReport {
   found_at: string;
   queue_secs: number | null;
   load_secs: number | null;
+  /** When the game went live (clock 0:00), as the log's local `MM/DD HH:MM:SS`. */
+  started_at: string | null;
   duration_secs: number | null;
   left_early: boolean;
   my_hero: string | null;
@@ -73,8 +75,15 @@ export interface LiveState {
   sapphire_score: number;
   winning_team: number | null;
   players: LivePlayer[];
-  kills: { clock: number | null; victim: number | null; attacker: number | null; assisters: number[]; souls: number }[];
+  kills: { tick: number; clock: number | null; victim: number | null; attacker: number | null; assisters: number[]; souls: number }[];
   souls_history: { clock: number; amber: number; sapphire: number }[];
+  /** Seconds paused, as far as the broadcast has seen. */
+  paused_secs: number;
+  mid_boss_kills: number;
+  /** Match clock at which the Mid Boss respawns; null while it's alive. */
+  mid_boss_respawn: number | null;
+  /** Neutral camp respawns, as on the in-game minimap. */
+  camps: { kind: "small" | "medium" | "large" | null; respawn_at: number }[];
 }
 
 export interface LivePlayer {
@@ -187,6 +196,9 @@ export interface Encounter {
   against_losses: number;
   against_matches: number;
   last_played: number | null;
+  /** Times the profile player killed them, and they the profile player. */
+  killed: number;
+  killed_by: number;
 }
 
 /** Mirrors `db::Profile`. */

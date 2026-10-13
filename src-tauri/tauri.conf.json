@@ -26,13 +26,27 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU1ODcwOTQ5QjIzRUIzQTMKUldTanN6NnlTUW1IVlRueWYwSjlYbFFBTkhWSlNEV29abjZaOFdleWM2U2MwVG16bUtkSlpYMWgK",
+      "endpoints": [
+        "https://github.com/Pandapus/deadlock-dash/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

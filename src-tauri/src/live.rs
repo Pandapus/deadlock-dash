@@ -31,7 +31,6 @@ const EMIT_INTERVAL: Duration = Duration::from_secs(1);
 const SAVE_INTERVAL: Duration = Duration::from_secs(30);
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 const MAX_RETRIES: u32 = 12;
-const KILLFEED_LEN: usize = 30;
 /// Seconds of match time between soul-history samples.
 const SOULS_SAMPLE_SECS: f32 = 10.0;
 /// SteamID64 of account id 0.
@@ -56,7 +55,12 @@ const RULES_QUERY: &str = r#"SELECT tick,
   "m_pGameRules__m_iWinningTeam" AS winning_team,
   "m_pGameRules__m_tStreetBrawl__m_iRound" AS round,
   "m_pGameRules__m_tStreetBrawl__m_iTeamAmberScore" AS amber_score,
-  "m_pGameRules__m_tStreetBrawl__m_iTeamSapphireScore" AS sapphire_score
+  "m_pGameRules__m_tStreetBrawl__m_iTeamSapphireScore" AS sapphire_score,
+  "m_pGameRules__m_nTotalPausedTicks" AS paused_ticks,
+  "m_pGameRules__m_nPauseStartTick" AS pause_start_tick,
+  "m_pGameRules__m_iMidbossKillCount" AS mid_boss_kills,
+  "m_pGameRules__m_vecNeutralCampNextSpawnTimes" AS camp_times,
+  "m_pGameRules__m_vecNeutralCampTimerIsMidBoss" AS camp_is_mid_boss
 FROM CCitadelGameRulesProxy"#;
 
 const KILLS_QUERY: &str = r#"SELECT tick, entindex_victim AS victim, entindex_attacker AS attacker,
@@ -104,12 +108,17 @@ pub struct LivePlayer {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LiveKill {
+    pub tick: i64,
+    /// Match clock at `tick`.
     pub clock: Option<f32>,
     /// Player slots; `None` for non-player killers (troopers, guardians).
     pub victim: Option<i64>,
     pub attacker: Option<i64>,
     pub assisters: Vec<i64>,
     pub souls: i64,
+    /// Victim pawn entity index; with `tick`, identifies a kill across stream replays.
+    #[serde(skip)]
+    pub victim_entity: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -133,10 +142,68 @@ pub struct LiveState {
     pub sapphire_score: i64,
     pub winning_team: Option<u8>,
     pub players: Vec<LivePlayer>,
+    /// Every kill so far, oldest first.
     pub kills: Vec<LiveKill>,
     pub souls_history: Vec<SoulsSample>,
+    /// Seconds the match has been paused, as far as the broadcast has seen.
+    pub paused_secs: f32,
+    pub mid_boss_kills: i64,
+    /// Match clock at which the Mid Boss respawns; `None` while it's alive.
+    pub mid_boss_respawn: Option<f32>,
+    /// Neutral camp respawn timers, as shown on the in-game minimap.
+    pub camps: Vec<CampTimer>,
     #[serde(skip)]
     clock_ref: Option<(i64, f32)>,
+    #[serde(skip)]
+    camp_slots: Vec<CampSlot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CampKind {
+    Small,
+    Medium,
+    /// Large camps and Sinner's Sacrifice.
+    Large,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CampTimer {
+    /// `None` if the feed joined too late to tell.
+    pub kind: Option<CampKind>,
+    /// Match clock of the next respawn.
+    pub respawn_at: f32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+struct CampSlot {
+    kind: Option<CampKind>,
+    mid_boss: bool,
+    /// Last value: -1 while the camp is up, else its next spawn time.
+    next: f32,
+    /// Has been up at least once, so `next` is a respawn, not the first spawn.
+    spawned: bool,
+}
+
+/// First spawn times on the match clock, checked against real games.
+const FIRST_SPAWNS: [(f32, CampKind); 3] = [
+    (120.0, CampKind::Small),
+    (300.0, CampKind::Medium),
+    (480.0, CampKind::Large),
+];
+
+impl CampKind {
+    /// From the respawn delay: 1:25 small, 4:50 medium (5:00 Sinner's
+    /// Sacrifice), 5:35 large.
+    fn from_respawn_delay(secs: f32) -> Self {
+        if secs < 150.0 {
+            Self::Small
+        } else if secs < 320.0 {
+            Self::Medium
+        } else {
+            Self::Large
+        }
+    }
 }
 
 fn int(row: &Value, key: &str) -> i64 {
@@ -263,14 +330,78 @@ impl LiveState {
         self.winning_team = u8::try_from(int(row, "winning_team"))
             .ok()
             .filter(|t| *t >= 2);
-        self.advance(int(row, "tick"));
+        let tick = int(row, "tick");
+        // Game time stops while paused; the total only grows once a pause ends.
+        let current_pause = if self.paused {
+            (tick - int(row, "pause_start_tick")).max(0)
+        } else {
+            0
+        };
+        self.paused_secs = (int(row, "paused_ticks") + current_pause) as f32 / TICK_RATE;
+        self.mid_boss_kills = int(row, "mid_boss_kills");
+        self.advance(tick);
+        if let (Some(times), Some(mid)) = (row["camp_times"].as_array(), row["camp_is_mid_boss"].as_array()) {
+            let times: Vec<f32> = times.iter().map(|v| v.as_f64().unwrap_or(-1.0) as f32).collect();
+            let mid: Vec<bool> = mid.iter().map(|v| v.as_bool().unwrap_or(false)).collect();
+            self.apply_camps(&times, &mid, self.clock_at(tick));
+        }
+    }
+
+    fn apply_camps(&mut self, times: &[f32], mid_boss: &[bool], clock: Option<f32>) {
+        self.camp_slots.resize(times.len(), CampSlot::default());
+        for (i, (slot, &next)) in self.camp_slots.iter_mut().zip(times).enumerate() {
+            slot.mid_boss = mid_boss.get(i).copied().unwrap_or(false);
+            if slot.kind.is_none() && !slot.mid_boss {
+                slot.kind = if !slot.spawned && clock.is_some_and(|c| c < next) {
+                    FIRST_SPAWNS.iter().find(|(t, _)| *t == next).map(|(_, k)| *k)
+                } else if slot.next < 0.0 && next > 0.0 {
+                    clock.map(|c| CampKind::from_respawn_delay(next - c))
+                } else {
+                    None
+                };
+            }
+            slot.spawned |= next < 0.0;
+            slot.next = next;
+        }
+        self.mid_boss_respawn = self
+            .camp_slots
+            .iter()
+            .find(|s| s.mid_boss)
+            .map(|s| s.next)
+            .filter(|t| *t > 0.0);
+        self.camps = self
+            .camp_slots
+            .iter()
+            .filter(|s| !s.mid_boss && s.spawned && s.next > 0.0)
+            .map(|s| CampTimer {
+                kind: s.kind,
+                respawn_at: s.next,
+            })
+            .collect();
+    }
+
+    /// Match clock at `tick`, from the last clock update before it.
+    fn clock_at(&self, tick: i64) -> Option<f32> {
+        let (ref_tick, ref_clock) = self.clock_ref?;
+        Some(ref_clock + (tick - ref_tick).max(0) as f32 / TICK_RATE)
     }
 
     pub fn apply_kill(&mut self, row: &Value) {
+        let (tick, victim_entity) = (int(row, "tick"), int(row, "victim"));
+        // A reconnected stream replays from the start.
+        if self
+            .kills
+            .iter()
+            .any(|k| k.tick == tick && k.victim_entity == victim_entity)
+        {
+            return;
+        }
         let by_pawn = |index: i64| self.players.iter().find(|p| p.pawn == index).map(|p| p.slot);
         let kill = LiveKill {
-            clock: self.clock,
-            victim: by_pawn(int(row, "victim")),
+            tick,
+            clock: self.clock_at(tick),
+            victim_entity,
+            victim: by_pawn(victim_entity),
             attacker: by_pawn(int(row, "attacker")),
             assisters: row["assisters"]
                 .as_array()
@@ -279,9 +410,6 @@ impl LiveState {
             souls: int(row, "souls"),
         };
         self.kills.push(kill);
-        if self.kills.len() > KILLFEED_LEN {
-            self.kills.remove(0);
-        }
     }
 }
 
@@ -676,6 +804,57 @@ mod tests {
         );
     }
 
+    fn rules(tick: i64, clock_at: f32, times: &[f32], mid: &[bool]) -> Value {
+        json!({"tick": tick, "clock_tick": 0, "clock_at": clock_at, "paused": false,
+            "winning_team": -1, "paused_ticks": 0, "camp_times": times, "camp_is_mid_boss": mid})
+    }
+
+    /// Values from the demo of match 114355492 (build 6774).
+    #[test]
+    fn tracks_camp_and_mid_boss_timers() {
+        let mid = [false, true, false, false];
+        let mut s = LiveState::new(1);
+        // Game start: first spawns, Mid Boss already up.
+        s.apply_rules(&rules(0, 0.0, &[480.0, 0.0, 300.0, 120.0], &mid));
+        s.apply_rules(&rules(1, 0.0, &[480.0, -1.0, 300.0, 120.0], &mid));
+        assert!(s.camps.is_empty(), "first spawns aren't respawns");
+        assert_eq!(s.mid_boss_respawn, None);
+
+        // Everything has spawned; the small camp is cleared at 3:12.
+        s.apply_rules(&rules(2, 480.0, &[-1.0, -1.0, -1.0, -1.0], &mid));
+        s.apply_rules(&rules(3, 192.0, &[-1.0, -1.0, -1.0, 277.0], &mid));
+        assert_eq!(
+            s.camps,
+            [CampTimer {
+                kind: Some(CampKind::Small),
+                respawn_at: 277.0
+            }]
+        );
+
+        // Mid Boss killed at 26:49.4: back 7:00 later.
+        s.apply_rules(&rules(4, 1609.42, &[-1.0, 2029.42, -1.0, -1.0], &mid));
+        assert_eq!(s.mid_boss_respawn, Some(2029.42));
+        assert!(s.camps.is_empty());
+    }
+
+    #[test]
+    fn classifies_camps_joined_late_by_respawn_delay() {
+        let mut s = LiveState::new(1);
+        s.apply_rules(&rules(0, 900.0, &[-1.0, -1.0], &[false, false]));
+        s.apply_rules(&rules(1, 900.0, &[1190.0, 1235.0], &[false, false]));
+        let kinds: Vec<_> = s.camps.iter().map(|c| c.kind).collect();
+        assert_eq!(kinds, [Some(CampKind::Medium), Some(CampKind::Large)]);
+    }
+
+    #[test]
+    fn counts_paused_time() {
+        let mut s = LiveState::new(1);
+        s.apply_rules(&json!({"tick": 20_000, "paused": true, "pause_start_tick": 18_720, "paused_ticks": 640}));
+        assert_eq!(s.paused_secs, 30.0);
+        s.apply_rules(&json!({"tick": 21_000, "paused": false, "paused_ticks": 2_560}));
+        assert_eq!(s.paused_secs, 40.0);
+    }
+
     #[test]
     fn builds_scoreboard_and_killfeed() {
         let mut s = LiveState::new(1);
@@ -704,5 +883,10 @@ mod tests {
         assert_eq!(kill.victim, Some(3));
         assert!(kill.assisters.is_empty());
         assert_eq!(kill.souls, 680);
+        assert_eq!(kill.clock, Some(-30.0 + (41176 - 6074) as f32 / 64.0));
+
+        // A reconnected stream replays the kill.
+        s.apply_kill(&json!({"tick":41176,"victim":77,"attacker":82,"assisters":[91],"souls":680}));
+        assert_eq!(s.kills.len(), 1);
     }
 }
