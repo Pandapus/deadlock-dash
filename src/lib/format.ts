@@ -26,3 +26,8 @@ export function formatKda(kills: number, deaths: number, assists: number): strin
 export function formatPercent(ratio: number | null): string {
   return ratio === null ? "–" : `${Math.round(ratio * 100)}%`;
 }
+
+/** Exact shop price, e.g. "3,200". */
+export function formatCost(value: number): string {
+  return value.toLocaleString("en-US");
+}

@@ -10,7 +10,10 @@ use std::time::Duration;
 
 use regex::Regex;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::db::{self, Store};
+use crate::match_report::{MatchPhase, MatchReport, MatchTracker};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Upper bound on bytes read per poll so a huge backlog can't stall the UI.
@@ -19,6 +22,7 @@ const MAX_READ_PER_POLL: u64 = 4 * 1024 * 1024;
 pub const EVENT_LINES: &str = "console://lines";
 pub const EVENT_GAME: &str = "console://game-event";
 pub const EVENT_STATUS: &str = "console://status";
+pub const EVENT_MATCH: &str = "console://match-report";
 
 /// Something recognised in the console output.
 ///
@@ -56,9 +60,12 @@ pub fn parse_line(line: &str) -> Option<GameEvent> {
         }
     }
     if let Some(c) = MAP_RE.captures(line) {
-        return Some(GameEvent::MapLoaded {
-            map: c[1].to_ascii_lowercase(),
-        });
+        // "start" is a placeholder the client prints while connecting.
+        if !c[1].eq_ignore_ascii_case("start") {
+            return Some(GameEvent::MapLoaded {
+                map: c[1].to_ascii_lowercase(),
+            });
+        }
     }
     if let Some(c) = CONNECTED_RE.captures(line) {
         return Some(GameEvent::ServerConnected {
@@ -152,12 +159,13 @@ pub struct ConsoleWatcher {
 }
 
 impl ConsoleWatcher {
-    pub fn start(&self, app: AppHandle, path: PathBuf) {
+    /// Reports are saved under `account_id` (the local player) when given.
+    pub fn start(&self, app: AppHandle, path: PathBuf, account_id: Option<u32>) {
         let stop = Arc::new(AtomicBool::new(false));
         if let Some(previous) = self.stop.lock().unwrap().replace(stop.clone()) {
             previous.store(true, Ordering::Relaxed);
         }
-        std::thread::spawn(move || watch(&app, &path, &stop));
+        std::thread::spawn(move || watch(&app, &path, account_id, &stop));
     }
 
     pub fn stop(&self) {
@@ -167,8 +175,10 @@ impl ConsoleWatcher {
     }
 }
 
-fn watch(app: &AppHandle, path: &Path, stop: &AtomicBool) {
+fn watch(app: &AppHandle, path: &Path, account_id: Option<u32>, stop: &AtomicBool) {
     let mut tail = Tail::default();
+    let mut tracker = MatchTracker::default();
+    let mut saved: Option<(u64, MatchPhase)> = None;
     let mut last_state: Option<(std::mem::Discriminant<WatchState>, Option<String>)> = None;
     let mut emit_status = |state: WatchState, message: Option<String>| {
         let key = (std::mem::discriminant(&state), message.clone());
@@ -189,10 +199,29 @@ fn watch(app: &AppHandle, path: &Path, stop: &AtomicBool) {
         match tail.poll(path) {
             Ok(update) => {
                 emit_status(WatchState::Watching, None);
+                if update.reset {
+                    tracker = MatchTracker::default();
+                    let _ = app.emit(EVENT_MATCH, tracker.report());
+                }
                 if update.reset || !update.lines.is_empty() {
+                    for line in &update.lines {
+                        tracker.feed(line);
+                    }
                     for event in update.lines.iter().filter_map(|l| parse_line(l)) {
                         let _ = app.emit(EVENT_GAME, event);
                     }
+                    let finished = tracker.take_finished();
+                    let dirty = tracker.take_dirty();
+                    if dirty {
+                        let _ = app.emit(EVENT_MATCH, tracker.report());
+                    }
+                    save_reports(
+                        app,
+                        &finished,
+                        dirty.then(|| tracker.report()).flatten(),
+                        account_id,
+                        &mut saved,
+                    );
                     let _ = app.emit(
                         EVENT_LINES,
                         LinesPayload {
@@ -204,11 +233,37 @@ fn watch(app: &AppHandle, path: &Path, stop: &AtomicBool) {
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 tail = Tail::default();
+                tracker = MatchTracker::default();
                 emit_status(WatchState::Waiting, None);
             }
             Err(e) => emit_status(WatchState::Error, Some(e.to_string())),
         }
         std::thread::sleep(POLL_INTERVAL);
+    }
+}
+
+/// Saves finished and in-progress reports. Tells the UI the history changed
+/// only when a match finishes or changes phase, not on every report tweak.
+fn save_reports(
+    app: &AppHandle,
+    finished: &[MatchReport],
+    current: Option<&MatchReport>,
+    account_id: Option<u32>,
+    saved: &mut Option<(u64, MatchPhase)>,
+) {
+    let store = app.state::<Store>();
+    let mut changed = false;
+    for report in finished.iter().chain(current) {
+        if let Err(e) = store.ingest_report(report, account_id) {
+            eprintln!("Couldn't save report for match {}: {e}", report.match_id);
+            continue;
+        }
+        let key = Some((report.match_id, report.phase));
+        changed |= *saved != key;
+        *saved = key;
+    }
+    if changed {
+        let _ = app.emit(db::EVENT_CHANGED, ());
     }
 }
 
@@ -283,6 +338,7 @@ mod tests {
                 reason: "server".into()
             })
         );
+        assert_eq!(parse_line(r#"[Client] Map: "start""#), None);
         assert_eq!(parse_line("[Shaders] compiled 42 shaders"), None);
         assert_eq!(parse_line("Minimap texture loaded"), None);
         assert_eq!(parse_line("bind F10 disconnect"), None);

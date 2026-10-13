@@ -7,6 +7,7 @@ import { formatDuration, formatPercent, formatSignedSouls, formatSouls } from ".
 import { heroRecord, summarize } from "../lib/stats";
 import { HeroBadge } from "./HeroBadge";
 import { NetWorthChart, type NetWorthSample } from "./NetWorthChart";
+import { Stat } from "./Stat";
 
 /** deadlock-api caches the active match list for 60s. */
 const POLL_MS = 60_000;
@@ -122,15 +123,6 @@ function MatchHeader({ match, myTeam }: { match: ActiveMatch; myTeam: number }) 
       />
       <Stat label="Mode" value={match.match_mode_parsed ?? "–"} />
       <Stat label="Spectators" value={String(match.spectators ?? 0)} />
-    </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "ally" | "enemy" }) {
-  return (
-    <div className="stat">
-      <span className="stat__label">{label}</span>
-      <span className={`stat__value ${tone ? `stat__value--${tone}` : ""}`}>{value}</span>
     </div>
   );
 }

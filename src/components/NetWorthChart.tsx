@@ -12,7 +12,7 @@ const HEIGHT = 140;
 const PAD = { top: 10, right: 12, bottom: 20, left: 44 };
 
 /** Diverging area chart of the soul lead over time: up = your team ahead. */
-export function NetWorthChart({ samples }: { samples: NetWorthSample[] }) {
+export function NetWorthChart({ samples, emptyText }: { samples: NetWorthSample[]; emptyText?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
 
@@ -29,7 +29,7 @@ export function NetWorthChart({ samples }: { samples: NetWorthSample[] }) {
     <div className="chart" ref={ref}>
       {samples.length < 2 ? (
         <p className="muted chart-empty">
-          Soul lead graph appears after a couple of updates (the feed refreshes about once a minute).
+          {emptyText ?? "Soul lead graph appears after a couple of updates (the feed refreshes about once a minute)."}
         </p>
       ) : (
         <Plot samples={samples} width={width} />
