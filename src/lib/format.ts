@@ -36,3 +36,8 @@ export function formatCost(value: number): string {
 export function formatClock(seconds: number): string {
   return seconds < 0 ? `−${formatDuration(-seconds)}` : formatDuration(seconds);
 }
+
+/** Local date and time, e.g. "Oct 13, 2026, 21:04". */
+export function formatDateTime(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}

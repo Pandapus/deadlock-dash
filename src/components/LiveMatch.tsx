@@ -8,6 +8,7 @@ import { heroRecord, summarize } from "../lib/stats";
 import { HeroBadge } from "./HeroBadge";
 import { NetWorthChart, type NetWorthSample } from "./NetWorthChart";
 import { Stat } from "./Stat";
+import { sidesClass, TEAM_BY_INDEX } from "../lib/teams";
 
 /** deadlock-api caches the active match list for 60s. */
 const POLL_MS = 60_000;
@@ -55,7 +56,7 @@ export function LiveMatch({ accountId, heroes, game }: Props) {
   const samples = match?.match_id != null ? samplesRef.current.get(match.match_id) ?? [] : [];
 
   return (
-    <section className="panel panel--wide">
+    <section className={`panel panel--wide ${sidesClass(TEAM_BY_INDEX[myTeam ?? 1])}`}>
       <header className="panel__header">
         <h2>Live match</h2>
         <span className="muted">

@@ -25,9 +25,13 @@
   --baseline: #383835;
   --accent: #c9a15b;
 
-  /* Diverging pair (validated against --surface): your team vs enemy. */
-  --ally: #3987e5;
-  --enemy: #e66767;
+  /* In-game team colours. */
+  --archmother: #3987e5;
+  --hidden-king: #e8a33d;
+
+  /* Your team vs enemy, painted in the real team colours (see .sides--*). */
+  --ally: var(--archmother);
+  --enemy: var(--hidden-king);
 
   /* Status: always paired with a text label. */
   --good: #0ca30c;
@@ -96,7 +100,20 @@ code {
   color: var(--ink-muted);
 }
 .error {
-  color: var(--enemy);
+  color: var(--bad);
+}
+
+/* Ally side is the given team; see src/lib/teams.ts. */
+.sides {
+  display: contents;
+}
+.sides--archmother {
+  --ally: var(--archmother);
+  --enemy: var(--hidden-king);
+}
+.sides--hidden-king {
+  --ally: var(--hidden-king);
+  --enemy: var(--archmother);
 }
 
 .app {
@@ -768,7 +785,7 @@ code {
   color: var(--ink);
 }
 .item-stat--negative dd {
-  color: var(--enemy);
+  color: var(--bad);
 }
 .rt-highlight {
   color: var(--ink);
@@ -915,6 +932,209 @@ code {
   gap: 6px 14px;
   margin-top: 6px;
   font-size: 13px;
+}
+
+/* Layout classes like .grid set display, which would beat the UA's [hidden]. */
+[hidden] {
+  display: none !important;
+}
+
+.table--clickable tbody tr {
+  cursor: pointer;
+}
+.table--clickable tbody tr:hover td {
+  background: var(--surface-raised);
+}
+.table--clickable tbody tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.table tfoot td {
+  border-bottom: none;
+  border-top: 1px solid var(--baseline);
+}
+
+/* Match page. */
+.teams--stacked {
+  grid-template-columns: 1fr;
+}
+.teams--stacked .table th {
+  white-space: nowrap;
+}
+.teams--stacked .items {
+  max-width: none;
+}
+.match-note {
+  margin: 0 0 8px;
+}
+.live-player .link {
+  color: var(--ink);
+}
+.live-player .link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.chart + .chart {
+  margin-top: 12px;
+}
+.chart__plot {
+  position: relative;
+}
+.swatch--mine {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 50%;
+}
+.timeline__dot {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.timeline__dot--ally {
+  fill: var(--ally);
+}
+.timeline__dot--enemy {
+  fill: var(--enemy);
+}
+.timeline__ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.timeline__dot--hover {
+  stroke: var(--ink);
+}
+
+/* Team totals: label | ally value | split bar | enemy value. */
+.split-bars {
+  display: grid;
+  grid-template-columns: max-content 56px minmax(120px, 1fr) 56px;
+  gap: 4px 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  max-width: 720px;
+  font-variant-numeric: tabular-nums;
+}
+.split-bars__row {
+  display: contents;
+}
+.split-bars__team {
+  font-size: 12px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.split-bars__team--left,
+.split-bars__value--left {
+  text-align: right;
+}
+.split-bars__label {
+  font-family: var(--font-label);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--ink-muted);
+}
+.split-bars__value {
+  font-size: 13px;
+}
+.split-bars__track {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 10px;
+}
+.split-bars__fill {
+  flex-basis: 0;
+  min-width: 0;
+}
+.split-bars__fill--ally {
+  background: var(--ally);
+  border-radius: 4px 0 0 4px;
+}
+.split-bars__fill--enemy {
+  background: var(--enemy);
+  border-radius: 0 4px 4px 0;
+}
+/* Even split marker. */
+.split-bars__mid {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--ink-muted);
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.player-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.player-bars__row {
+  display: grid;
+  grid-template-columns: 170px 1fr 52px;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.player-bars__row:hover {
+  background: var(--surface-raised);
+}
+.player-bars__row--focus {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.player-bars__who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.player-bars__name {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player-bars__name:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.player-bars__row--focus .player-bars__name {
+  font-weight: 600;
+}
+.player-bars__track {
+  height: 10px;
+}
+.player-bars__fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+.player-bars__fill--ally {
+  background: var(--ally);
+}
+.player-bars__fill--enemy {
+  background: var(--enemy);
+}
+.player-bars__value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.killfeed__more {
+  margin-top: 8px;
+  font-size: 12px;
 }
 
 /* Heroes tab. The selected hero is drawn in the accent; the rest of the roster

@@ -10,11 +10,18 @@ import { HeroBadge } from "./HeroBadge";
 import { MatchTable } from "./MatchTable";
 import { Stat } from "./Stat";
 
+interface PageProps {
+  selfId: number;
+  heroes: HeroMap;
+  /** Players opened after your own profile, so Back can retrace them. */
+  trail: number[];
+  onOpenPlayer: (accountId: number) => void;
+  onBack: () => void;
+  onOpenMatch: (matchId: number, accountId: number) => void;
+}
+
 /** Your profile, and anyone you've played with, from the local database. */
-export function ProfilePage({ selfId, heroes }: { selfId: number; heroes: HeroMap }) {
-  // Players opened from the encounters list, so Back can retrace them.
-  const [trail, setTrail] = useState<number[]>([]);
-  useEffect(() => setTrail([]), [selfId]);
+export function ProfilePage({ selfId, heroes, trail, onOpenPlayer, onBack, onOpenMatch }: PageProps) {
   const accountId = trail.at(-1) ?? selfId;
 
   return (
@@ -23,8 +30,9 @@ export function ProfilePage({ selfId, heroes }: { selfId: number; heroes: HeroMa
       accountId={accountId}
       isSelf={accountId === selfId}
       heroes={heroes}
-      onOpen={(id) => setTrail((t) => (id === selfId ? [] : [...t, id]))}
-      onBack={trail.length > 0 ? () => setTrail((t) => t.slice(0, -1)) : undefined}
+      onOpen={onOpenPlayer}
+      onBack={trail.length > 0 ? onBack : undefined}
+      onOpenMatch={(matchId) => onOpenMatch(matchId, accountId)}
     />
   );
 }
@@ -35,9 +43,10 @@ interface ViewProps {
   heroes: HeroMap;
   onOpen: (accountId: number) => void;
   onBack?: () => void;
+  onOpenMatch: (matchId: number) => void;
 }
 
-function ProfileView({ accountId, isSelf, heroes, onOpen, onBack }: ViewProps) {
+function ProfileView({ accountId, isSelf, heroes, onOpen, onBack, onOpenMatch }: ViewProps) {
   const { profile, error, refreshError } = useProfile(accountId);
   const steam = useSteamProfile(accountId);
 
@@ -76,7 +85,7 @@ function ProfileView({ accountId, isSelf, heroes, onOpen, onBack }: ViewProps) {
                 Latest {profile.matches.length} of {profile.totals.matches} saved
               </span>
             </header>
-            <MatchTable matches={profile.matches} heroes={heroes} />
+            <MatchTable matches={profile.matches} heroes={heroes} onOpen={onOpenMatch} />
           </section>
         </>
       )}

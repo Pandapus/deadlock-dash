@@ -417,6 +417,79 @@ pub struct Profile {
     pub encounters: Vec<Encounter>,
 }
 
+/// One player's row in a stored match. Stats are `None` where no source saw them.
+#[derive(Debug, Clone, Serialize)]
+pub struct MatchPlayer {
+    pub account_id: u32,
+    pub persona_name: Option<String>,
+    pub team: Option<i64>,
+    pub hero_id: Option<i64>,
+    pub level: Option<i64>,
+    pub net_worth: Option<i64>,
+    pub kills: Option<i64>,
+    pub deaths: Option<i64>,
+    pub assists: Option<i64>,
+    pub last_hits: Option<i64>,
+    pub denies: Option<i64>,
+    pub hero_damage: Option<i64>,
+    pub healing: Option<i64>,
+    pub objective_damage: Option<i64>,
+    pub abandoned: Option<bool>,
+    /// Item ids in purchase order, as last seen on the broadcast.
+    pub items: Option<Vec<i64>>,
+    pub source: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MatchKill {
+    pub clock: Option<f64>,
+    pub victim_account: Option<u32>,
+    pub attacker_account: Option<u32>,
+    pub assister_accounts: Vec<u32>,
+    pub souls: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoulsSample {
+    pub clock: f64,
+    pub amber: i64,
+    pub sapphire: i64,
+}
+
+/// Everything stored about one match.
+#[derive(Debug, Clone, Serialize)]
+pub struct MatchDetail {
+    pub match_id: u64,
+    pub start_time: Option<i64>,
+    pub duration_s: Option<i64>,
+    pub game_mode: Option<i64>,
+    pub match_mode: Option<i64>,
+    pub winning_team: Option<i64>,
+    pub build: Option<i64>,
+    pub map: Option<String>,
+    pub source: &'static str,
+    pub souls_history: Vec<SoulsSample>,
+    pub players: Vec<MatchPlayer>,
+    /// Oldest first.
+    pub kills: Vec<MatchKill>,
+    /// Your console report, as stored (`MatchReport` JSON).
+    pub report: Option<serde_json::Value>,
+    pub report_account: Option<u32>,
+}
+
+fn source_name(rank: i64) -> &'static str {
+    match rank {
+        RANK_HISTORY => "history",
+        RANK_LIVE => "live",
+        _ => "console",
+    }
+}
+
+/// Parses a JSON column, treating malformed JSON like a missing value.
+fn json_col<T: serde::de::DeserializeOwned>(raw: Option<String>) -> Option<T> {
+    serde_json::from_str(&raw?).ok()
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
     path: Option<PathBuf>,
@@ -804,11 +877,7 @@ impl Store {
                         hero_damage: r.get(15)?,
                         abandoned: r.get(16)?,
                         has_report: r.get(17)?,
-                        source: match r.get::<_, i64>(18)? {
-                            RANK_HISTORY => "history",
-                            RANK_LIVE => "live",
-                            _ => "console",
-                        },
+                        source: source_name(r.get(18)?),
                     })
                 })?
                 .collect::<rusqlite::Result<_>>()?;
@@ -861,6 +930,106 @@ impl Store {
                 matches,
                 encounters,
             })
+        })
+    }
+
+    /// Everything stored about `match_id`, or `None` if it isn't saved.
+    pub fn match_detail(&self, match_id: u64) -> Result<Option<MatchDetail>, String> {
+        self.read(|c| {
+            let id = match_id as i64;
+            let Some(mut detail) = c
+                .query_row(
+                    "SELECT start_time, duration_s, game_mode, match_mode, winning_team, build, map,
+                       source, souls_history
+                     FROM matches WHERE match_id = ?1",
+                    [id],
+                    |r| {
+                        Ok(MatchDetail {
+                            match_id,
+                            start_time: r.get(0)?,
+                            duration_s: r.get(1)?,
+                            game_mode: r.get(2)?,
+                            match_mode: r.get(3)?,
+                            winning_team: r.get(4)?,
+                            build: r.get(5)?,
+                            map: r.get(6)?,
+                            source: source_name(r.get(7)?),
+                            souls_history: json_col(r.get(8)?).unwrap_or_default(),
+                            players: Vec::new(),
+                            kills: Vec::new(),
+                            report: None,
+                            report_account: None,
+                        })
+                    },
+                )
+                .optional()?
+            else {
+                return Ok(None);
+            };
+
+            detail.players = c
+                .prepare(
+                    "SELECT mp.account_id, p.persona_name, mp.team, mp.hero_id, mp.level, mp.net_worth,
+                       mp.kills, mp.deaths, mp.assists, mp.last_hits, mp.denies, mp.hero_damage,
+                       mp.healing, mp.objective_damage, mp.abandoned, mp.items, mp.source
+                     FROM match_players mp
+                     LEFT JOIN players p USING (account_id)
+                     WHERE mp.match_id = ?1
+                     ORDER BY mp.team, mp.net_worth DESC, mp.account_id",
+                )?
+                .query_map([id], |r| {
+                    Ok(MatchPlayer {
+                        account_id: r.get(0)?,
+                        persona_name: r.get(1)?,
+                        team: r.get(2)?,
+                        hero_id: r.get(3)?,
+                        level: r.get(4)?,
+                        net_worth: r.get(5)?,
+                        kills: r.get(6)?,
+                        deaths: r.get(7)?,
+                        assists: r.get(8)?,
+                        last_hits: r.get(9)?,
+                        denies: r.get(10)?,
+                        hero_damage: r.get(11)?,
+                        healing: r.get(12)?,
+                        objective_damage: r.get(13)?,
+                        abandoned: r.get(14)?,
+                        items: json_col(r.get(15)?),
+                        source: source_name(r.get(16)?),
+                    })
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+
+            detail.kills = c
+                .prepare(
+                    "SELECT clock, victim_account, attacker_account, assister_accounts, souls
+                     FROM match_kills WHERE match_id = ?1
+                     ORDER BY tick, victim_entity",
+                )?
+                .query_map([id], |r| {
+                    Ok(MatchKill {
+                        clock: r.get(0)?,
+                        victim_account: r.get(1)?,
+                        attacker_account: r.get(2)?,
+                        assister_accounts: json_col(r.get(3)?).unwrap_or_default(),
+                        souls: r.get(4)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+
+            if let Some((account, report)) = c
+                .query_row(
+                    "SELECT account_id, report FROM match_reports WHERE match_id = ?1",
+                    [id],
+                    |r| Ok((r.get::<_, Option<u32>>(0)?, r.get::<_, String>(1)?)),
+                )
+                .optional()?
+            {
+                detail.report_account = account;
+                detail.report = serde_json::from_str(&report).ok();
+            }
+
+            Ok(Some(detail))
         })
     }
 }
@@ -1117,6 +1286,43 @@ mod tests {
             .find(|e| e.account_id == 9)
             .unwrap();
         assert_eq!((foe.killed, foe.killed_by), (40, 1));
+    }
+
+    #[test]
+    fn match_detail_collects_every_source() {
+        let store = Store::in_memory();
+        assert!(store.match_detail(1).unwrap().is_none());
+
+        let mut players = vec![live_player(42, 2, "me"), live_player(9, 3, "foe")];
+        for (slot, p) in players.iter_mut().enumerate() {
+            p.slot = slot as i64;
+        }
+        let mut state = live(1, players, Some(2));
+        state.kills = vec![kill(2000, 1, 0, vec![]), kill(1000, 0, 1, vec![])];
+        state.souls_history = vec![crate::live::SoulsSample {
+            clock: 20.0,
+            amber: 1000,
+            sapphire: 900,
+        }];
+        store.ingest_live(&state).unwrap();
+        store.ingest_history(42, &[history(1, 0, 1, 10)]).unwrap();
+        store
+            .ingest_report(&report(1, MatchPhase::Ended), Some(42))
+            .unwrap();
+
+        let d = store.match_detail(1).unwrap().unwrap();
+        assert_eq!((d.source, d.winning_team), ("history", Some(0)));
+        assert_eq!(d.map.as_deref(), Some("street_test"));
+        assert_eq!(d.souls_history.len(), 1);
+        assert_eq!(d.players.len(), 2);
+        let me = d.players.iter().find(|p| p.account_id == 42).unwrap();
+        assert_eq!(me.persona_name.as_deref(), Some("me"));
+        assert_eq!((me.kills, me.hero_damage), (Some(10), Some(9000)));
+        assert_eq!(me.items.as_deref(), Some(&[1, 2][..]));
+        assert_eq!(d.kills.len(), 2);
+        assert_eq!(d.kills[0].victim_account, Some(42), "oldest first");
+        assert_eq!(d.report_account, Some(42));
+        assert_eq!(d.report.unwrap()["my_hero"], "hornet");
     }
 
     #[test]

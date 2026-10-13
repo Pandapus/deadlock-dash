@@ -6,7 +6,15 @@ import { MatchTable } from "./MatchTable";
 
 const SHOWN = 15;
 
-export function RecentMatches({ accountId, heroes }: { accountId: number; heroes: HeroMap }) {
+export function RecentMatches({
+  accountId,
+  heroes,
+  onOpenMatch,
+}: {
+  accountId: number;
+  heroes: HeroMap;
+  onOpenMatch: (matchId: number) => void;
+}) {
   const { profile, error, refreshError } = useProfile(accountId, SHOWN);
   const totals = profile?.totals;
 
@@ -30,7 +38,7 @@ export function RecentMatches({ accountId, heroes }: { accountId: number; heroes
           history for accounts it has seen (see the README).
         </p>
       )}
-      {profile && profile.matches.length > 0 && <MatchTable matches={profile.matches} heroes={heroes} />}
+      {profile && profile.matches.length > 0 && <MatchTable matches={profile.matches} heroes={heroes} onOpen={onOpenMatch} />}
     </section>
   );
 }
