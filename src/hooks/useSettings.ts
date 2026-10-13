@@ -1,17 +1,33 @@
 import { useCallback, useState } from "react";
+import type { TimerKind } from "../lib/timers";
+
+export interface TimerPrefs {
+  /** Missing kinds fall back to their default (see TIMER_KINDS). */
+  enabled: Partial<Record<TimerKind, boolean>>;
+  voice: boolean;
+  /** Seconds of warning before a spawn. */
+  lead: number;
+}
 
 export interface Settings {
   accountId: number | null;
   consoleLogPath: string | null;
+  timers: TimerPrefs;
 }
 
 const KEY = "deadlock-dash:settings";
-const DEFAULTS: Settings = { accountId: null, consoleLogPath: null };
+const DEFAULTS: Settings = {
+  accountId: null,
+  consoleLogPath: null,
+  timers: { enabled: {}, voice: true, lead: 20 },
+};
 
 function load(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
+    if (!raw) return DEFAULTS;
+    const saved = JSON.parse(raw);
+    return { ...DEFAULTS, ...saved, timers: { ...DEFAULTS.timers, ...saved.timers } };
   } catch {
     return DEFAULTS;
   }

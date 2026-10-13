@@ -31,3 +31,8 @@ export function formatPercent(ratio: number | null): string {
 export function formatCost(value: number): string {
   return value.toLocaleString("en-US");
 }
+
+/** Match clock, negative during the pre-game countdown. */
+export function formatClock(seconds: number): string {
+  return seconds < 0 ? `−${formatDuration(-seconds)}` : formatDuration(seconds);
+}

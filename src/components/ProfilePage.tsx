@@ -170,6 +170,9 @@ function EncountersPanel({
               <th className="num">Matches</th>
               <th className="num">With</th>
               <th className="num">Against</th>
+              <th className="num" title={isSelf ? "Times you killed them / they killed you" : "Kills on / deaths to them"}>
+                Kills / deaths
+              </th>
               <th className="num">Last</th>
             </tr>
           </thead>
@@ -184,6 +187,7 @@ function EncountersPanel({
                 <td className="num">{e.matches}</td>
                 <td className="num">{e.with_matches ? `${e.with_wins}–${e.with_losses}` : "–"}</td>
                 <td className="num">{e.against_matches ? `${e.against_wins}–${e.against_losses}` : "–"}</td>
+                <td className="num">{e.killed || e.killed_by ? `${e.killed} / ${e.killed_by}` : "–"}</td>
                 <td className="num muted">{e.last_played != null ? formatRelativeTime(e.last_played) : "–"}</td>
               </tr>
             ))}

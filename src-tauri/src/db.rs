@@ -37,7 +37,8 @@ const RANK_LIVE: i64 = 2;
 const RANK_HISTORY: i64 = 3;
 
 /// Applied in order; `PRAGMA user_version` records how many have run.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -112,7 +113,29 @@ CREATE TABLE match_reports (
   synced_at  INTEGER
 );
 CREATE INDEX match_reports_account ON match_reports (account_id);
-"#];
+"#,
+    r#"
+-- Every hero kill from the live broadcast. Accounts are NULL for kills by
+-- or on non-players (troopers, guardians) or players we couldn't map.
+CREATE TABLE match_kills (
+  match_id          INTEGER NOT NULL REFERENCES matches (match_id) ON DELETE CASCADE,
+  tick              INTEGER NOT NULL,
+  -- Victim pawn entity index: with tick, tells two kills apart.
+  victim_entity     INTEGER NOT NULL,
+  clock             REAL,
+  victim_account    INTEGER,
+  attacker_account  INTEGER,
+  -- JSON array of assisting account ids.
+  assister_accounts TEXT NOT NULL,
+  souls             INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  synced_at         INTEGER,
+  PRIMARY KEY (match_id, tick, victim_entity)
+);
+CREATE INDEX match_kills_attacker ON match_kills (attacker_account);
+CREATE INDEX match_kills_victim ON match_kills (victim_account);
+"#,
+];
 
 /// `SET` clause implementing the rank rule above for `cols` of `table`.
 fn merge_clause(table: &str, cols: &[&str]) -> String {
@@ -380,6 +403,9 @@ pub struct Encounter {
     pub against_losses: i64,
     pub against_matches: i64,
     pub last_played: Option<i64>,
+    /// Times the profile player killed them, and they the profile player.
+    pub killed: i64,
+    pub killed_by: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -572,6 +598,44 @@ impl Store {
                     },
                 )?;
             }
+            let account = |slot: Option<i64>| {
+                let slot = slot?;
+                state.players.iter().find(|p| p.slot == slot)?.account_id
+            };
+            let mut insert_kill = tx.prepare_cached(
+                "INSERT INTO match_kills (match_id, tick, victim_entity, clock, victim_account,
+                   attacker_account, assister_accounts, souls, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, unixepoch())
+                 ON CONFLICT (match_id, tick, victim_entity) DO UPDATE SET
+                   clock = COALESCE(excluded.clock, clock),
+                   victim_account = COALESCE(excluded.victim_account, victim_account),
+                   attacker_account = COALESCE(excluded.attacker_account, attacker_account),
+                   assister_accounts = excluded.assister_accounts,
+                   souls = excluded.souls,
+                   updated_at = unixepoch()
+                 WHERE excluded.clock IS NOT clock
+                    OR excluded.victim_account IS NOT victim_account
+                    OR excluded.attacker_account IS NOT attacker_account
+                    OR excluded.assister_accounts IS NOT assister_accounts
+                    OR excluded.souls IS NOT souls",
+            )?;
+            for k in &state.kills {
+                let assisters: Vec<u32> = k
+                    .assisters
+                    .iter()
+                    .filter_map(|s| account(Some(*s)))
+                    .collect();
+                insert_kill.execute(params![
+                    state.match_id as i64,
+                    k.tick,
+                    k.victim_entity,
+                    k.clock,
+                    account(k.victim),
+                    account(k.attacker),
+                    serde_json::to_string(&assisters).unwrap_or_else(|_| "[]".into()),
+                    k.souls,
+                ])?;
+            }
             Ok(())
         })
     }
@@ -758,7 +822,11 @@ impl Store {
                        IFNULL(SUM(o.team != me.team AND m.winning_team = me.team), 0),
                        IFNULL(SUM(o.team != me.team AND m.winning_team != me.team), 0),
                        IFNULL(SUM(o.team != me.team), 0),
-                       MAX(COALESCE(m.start_time, m.created_at))
+                       MAX(COALESCE(m.start_time, m.created_at)),
+                       (SELECT COUNT(*) FROM match_kills k
+                        WHERE k.attacker_account = ?1 AND k.victim_account = o.account_id),
+                       (SELECT COUNT(*) FROM match_kills k
+                        WHERE k.attacker_account = o.account_id AND k.victim_account = ?1)
                      FROM match_players me
                      JOIN match_players o ON o.match_id = me.match_id AND o.account_id != me.account_id
                      JOIN matches m ON m.match_id = me.match_id
@@ -780,6 +848,8 @@ impl Store {
                         against_losses: r.get(7)?,
                         against_matches: r.get(8)?,
                         last_played: r.get(9)?,
+                        killed: r.get(10)?,
+                        killed_by: r.get(11)?,
                     })
                 })?
                 .collect::<rusqlite::Result<_>>()?;
@@ -821,7 +891,7 @@ fn unix_now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live::{LivePlayer, LiveState, LiveStatus};
+    use crate::live::{LiveKill, LivePlayer, LiveState, LiveStatus};
     use crate::match_report::{HitReg, Network, Performance};
 
     fn history(match_id: u64, team: i64, outcome: i64, kills: i64) -> HistoryEntry {
@@ -878,6 +948,7 @@ mod tests {
             found_at: "12:00:00".into(),
             queue_secs: Some(30),
             load_secs: Some(40),
+            started_at: Some("10/12 21:00:00".into()),
             duration_secs: Some(1490),
             left_early: false,
             my_hero: Some("hornet".into()),
@@ -993,6 +1064,59 @@ mod tests {
         );
         // Other players get profiles too.
         assert_eq!(store.profile(9, 10).unwrap().totals.losses, 1);
+    }
+
+    fn kill(tick: i64, victim: i64, attacker: i64, assisters: Vec<i64>) -> LiveKill {
+        LiveKill {
+            tick,
+            clock: Some(tick as f32 / 64.0),
+            victim: Some(victim),
+            attacker: Some(attacker),
+            assisters,
+            souls: 500,
+            victim_entity: victim + 100,
+        }
+    }
+
+    #[test]
+    fn stores_every_kill_once() {
+        let store = Store::in_memory();
+        let mut players = vec![
+            live_player(42, 2, "me"),
+            live_player(7, 2, "mate"),
+            live_player(9, 3, "foe"),
+        ];
+        for (slot, p) in players.iter_mut().enumerate() {
+            p.slot = slot as i64;
+        }
+        let mut state = live(1, players, None);
+        state.kills = (0..40).map(|i| kill(1000 + i, 2, 0, vec![1])).collect();
+        state.kills.push(kill(5000, 0, 2, vec![]));
+        // Saved every 30 s, so the same kills arrive again.
+        store.ingest_live(&state).unwrap();
+        store.ingest_live(&state).unwrap();
+
+        let (count, assisters): (i64, String) = store
+            .read(|c| {
+                c.query_row(
+                    "SELECT COUNT(*), (SELECT assister_accounts FROM match_kills WHERE tick = 1000)
+                     FROM match_kills WHERE match_id = 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+            })
+            .unwrap();
+        assert_eq!(count, 41, "all kills, not just the last 30");
+        assert_eq!(assisters, "[7]");
+
+        let foe = store
+            .profile(42, 10)
+            .unwrap()
+            .encounters
+            .into_iter()
+            .find(|e| e.account_id == 9)
+            .unwrap();
+        assert_eq!((foe.killed, foe.killed_by), (40, 1));
     }
 
     #[test]
