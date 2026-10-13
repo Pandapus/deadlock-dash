@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { toAbility, type Ability, type RawAbility } from "../lib/abilities";
+import { toHeroMeta, toHeroProfile, toWeapon, type HeroMeta, type HeroProfile, type RawHero, type RawHeroAnalytics, type RawWeapon, type Weapon } from "../lib/heroStats";
 import { toItem, type RawItem } from "../lib/itemStats";
 import type { ActiveMatch, Hero, Item, MatchHistoryEntry, SteamProfile } from "./types";
 
@@ -26,10 +28,52 @@ function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<
 
 const MINUTE = 60_000;
 
-export function getHeroes(): Promise<Hero[]> {
+function getRawHeroes(): Promise<RawHero[]> {
   return cached("heroes", 60 * MINUTE, () =>
-    apiGet<Hero[]>("/v1/assets/heroes", { only_active: true }),
+    apiGet<RawHero[]>("/v1/assets/heroes", { only_active: true }),
   );
+}
+
+export function getHeroes(): Promise<Hero[]> {
+  return getRawHeroes();
+}
+
+/** Full hero details for the Heroes tab, from the same cached response as getHeroes. */
+export function getHeroProfiles(): Promise<HeroProfile[]> {
+  return getRawHeroes().then((list) => list.map(toHeroProfile));
+}
+
+/** Hero guns keyed by class name (a hero's `weaponClass`). */
+export function getWeapons(): Promise<Map<string, Weapon>> {
+  return cached("weapons", 60 * MINUTE, async () => {
+    const list = await apiGet<RawWeapon[]>("/v1/assets/items/by-type/weapon");
+    const map = new Map<string, Weapon>();
+    for (const raw of list) {
+      const weapon = toWeapon(raw);
+      if (weapon) map.set(raw.class_name, weapon);
+    }
+    return map;
+  });
+}
+
+/** A hero's four abilities, keyed by class name. */
+export function getHeroAbilities(heroId: number): Promise<Map<string, Ability>> {
+  return cached(`abilities:${heroId}`, 60 * MINUTE, async () => {
+    const list = await apiGet<RawAbility[]>(`/v1/assets/items/by-hero-id/${heroId}`);
+    return new Map(list.filter((a) => a.type === "ability").map((a) => [a.class_name, toAbility(a)]));
+  });
+}
+
+const HERO_META_DAYS = 7;
+
+/** Win/pick rates over the last week, across all modes and ranks. */
+export function getHeroMeta(): Promise<Map<number, HeroMeta>> {
+  return cached("hero-meta", 30 * MINUTE, async () => {
+    // Rounded to the hour so the API's own cache can serve repeat requests.
+    const since = Math.floor(Date.now() / 3_600_000) * 3600 - HERO_META_DAYS * 86_400;
+    const rows = await apiGet<RawHeroAnalytics[]>("/v1/analytics/hero-stats", { min_unix_timestamp: since });
+    return toHeroMeta(rows);
+  });
 }
 
 /** Shop items, slimmed down to what the UI shows (the full response is ~2 MB). */

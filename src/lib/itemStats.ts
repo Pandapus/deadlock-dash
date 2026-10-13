@@ -116,7 +116,7 @@ export function formatValue(prop: RawProperty): string | null {
   return `${sign}${Math.abs(n)}${unit}`;
 }
 
-function humanize(key: string): string {
+export function humanize(key: string): string {
   return key
     .replace(/^StatusEffect/, "")
     .replace(/([a-z])([A-Z])/g, "$1 $2")
@@ -124,7 +124,7 @@ function humanize(key: string): string {
 }
 
 /** Inline SVG/IMG icons are large and add nothing once rendered as text. */
-function stripIcons(html: string): string {
+export function stripIcons(html: string): string {
   return html
     .replace(/<svg[\s\S]*?<\/svg>/gi, "")
     .replace(/<img[^>]*>/gi, "")
